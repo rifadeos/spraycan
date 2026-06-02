@@ -4,7 +4,7 @@
 // Coordinates stay in working pixels — the SVG viewBox maps them to mm.
 
 const TRACE_DEFAULTS = {
-  ltres: 1, qtres: 1, pathomit: 8, rightangleenhance: true,
+  ltres: 1, qtres: 1, pathomit: 2, rightangleenhance: true,
   colorsampling: 0, numberofcolors: 2, mincolorratio: 0, colorquantcycles: 1,
   blurradius: 0, strokewidth: 0, linefilter: false, roundcoords: 2,
   pal: [{ r: 0, g: 0, b: 0, a: 255 }, { r: 255, g: 255, b: 255, a: 255 }],

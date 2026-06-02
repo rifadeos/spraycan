@@ -116,7 +116,14 @@ function reburn(layer) {
   for (let i = 0; i < fm.length; i++) fm[i] = islandMask.data[i] === 0 ? 1 : 0;
   layer.floatingMask = fm;
 }
-function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask); }
+// Line-detail → vectoriser fidelity. Higher detail keeps smaller features
+// (lower pathomit) and truer curves (lower ltres/qtres).
+function traceOpts() {
+  const d = state.params ? state.params.detail : 2;
+  const pathomit = [12, 6, 2, 1][d] ?? 2;
+  return d >= 3 ? { pathomit, ltres: 0.5, qtres: 0.5 } : { pathomit };
+}
+function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, traceOpts()); }
 
 async function recomputeAll() {
   if (!state.gray) return;
@@ -134,18 +141,19 @@ async function recomputeAll() {
     // islands can always be bridged, and matches a real stencil's border.
     const border = Math.max(2, Math.round(Math.min(state.gray.width, state.gray.height) * 0.01));
     const built = buildLayers(state.gray, p.thresholds);
-    state.layers = built.map((L, i) => {
-      const cleaned = minArea > 1 ? despeckle(L.mask, minArea) : L.mask;
+    state.layers = [];
+    for (let i = 0; i < built.length; i++) {
+      const cleaned = minArea > 1 ? despeckle(built[i].mask, minArea) : built[i].mask;
       const framed = frameBorder(cleaned, border);
       // Smart bridging: fill tiny islands, tie only the meaningful (capped) ones.
       const { mask: baseMask, bridges } = prepareIslands(framed, { widthPx: bw, minIslandArea, maxBridges, brightMask, keepHighlights: p.keepHighlights });
-      const layer = { order: i, threshold: L.threshold, baseMask, bridges, workMask: null, floatingMask: null, traced: null };
+      const layer = { order: i, threshold: built[i].threshold, baseMask, bridges, workMask: null, floatingMask: null, traced: null };
       reburn(layer);
-      return layer;
-    });
-    if (my !== busyToken) return;
-    busy('Vectorising…'); await raf();
-    for (const layer of state.layers) { retrace(layer); if (my !== busyToken) return; }
+      retrace(layer);
+      state.layers.push(layer);
+      if (my !== busyToken) return;            // a newer change superseded this run
+      busy(`Building layer ${i + 1} of ${built.length}…`); await raf();  // yield → UI stays responsive
+    }
     if (state.colors.length !== state.layers.length) {
       state.colors = defaultColors(state.layers.length);
       state.colorNames = defaultColorNames(state.layers.length);
@@ -166,6 +174,19 @@ async function recomputeAll() {
     console.error(err);
     fail('Error: ' + err.message);
   }
+}
+
+// Re-vectorise the existing masks (e.g. when only Line detail changed) — much
+// cheaper than rebuilding layers, and yields between layers to stay responsive.
+async function retraceAll() {
+  if (!state.layers.length) return;
+  const my = ++busyToken;
+  busy('Re-tracing…'); await raf();
+  try {
+    for (const layer of state.layers) { retrace(layer); if (my !== busyToken) return; await raf(); }
+    refreshUI();
+    ready('Ready — adjust, fix bridges, then export.');
+  } catch (err) { console.error(err); fail('Error: ' + err.message); }
 }
 
 // ---- UI sync --------------------------------------------------------------
@@ -301,6 +322,8 @@ function onChange(el) {
     case 'bridgeMode':
     case 'keepHighlights':
       recomputeAll(); break;
+    case 'detail':
+      retraceAll(); break;
     case 'material': {
       const m = MATERIALS[state.params.material] || MATERIALS.mylar;
       els.bridgeWidth.value = String(m.bridge); state.params.bridgeWidth = m.bridge;

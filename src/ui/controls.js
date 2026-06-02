@@ -19,6 +19,7 @@ export function readParams(root) {
     contrast: +g('contrast').value,
     invert: g('invert').checked,
     smooth: +g('smooth').value,
+    detail: +g('detail').value,
     autoLevels: g('autoLevels').checked,
     keepHighlights: g('keepHighlights').checked,
     removeBg: g('removeBg').checked,
