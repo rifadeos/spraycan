@@ -1,0 +1,10 @@
+{
+  "name": "spraycan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SprayCan — turn any image into a layered, cuttable spray-paint stencil (SVG + tiled PDF), sized to print and ready to cut and spray. Runs entirely in the browser.",
+  "scripts": {
+    "test": "node --test"
+  }
+}

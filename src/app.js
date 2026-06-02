@@ -1,0 +1,473 @@
+// StencilForge — app controller. Owns state, runs the pipeline, wires the UI.
+
+import { fileToImage, imageToGray } from './image.js';
+import { autoThresholds, buildLayers } from './posterize.js';
+import { despeckle, frameBorder } from './morphology.js';
+import { findIslands } from './islands.js';
+import { autoBridges, burnBridges, prepareIslands } from './bridges.js';
+import { traceMaskToPaths } from './trace.js';
+import { physicalSize, toMm } from './units.js';
+import { cornerMarks } from './registration.js';
+import { layerToSVG, combinedSVG } from './exporters/svg.js';
+import { exportTiledPDF } from './exporters/pdf.js';
+import { makeZipBlob } from './exporters/bundle.js';
+import { toHex } from './color.js';
+import { PALETTES, findPaintName, findNearestPaint } from './palettes.js';
+import { readParams, reflectValues, bindControls, renderThresholds } from './ui/controls.js';
+import { renderGuide } from './ui/guide.js';
+import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
+import { LayerEditor } from './ui/editor.js';
+
+const $ = id => document.getElementById(id);
+const els = {
+  root: $('root'), file: $('file'), sample: $('sample'), thresholds: $('thresholds'),
+  layers: $('layers'), minFeature: $('minFeature'), bridgeWidth: $('bridgeWidth'),
+  targetWidth: $('targetWidth'), unit: $('unit'),
+  autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
+  exportSvg: $('exportSvg'), exportCombined: $('exportCombined'), exportPdf: $('exportPdf'),
+  dims: $('dims'), status: $('status'), guide: $('guide'),
+  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'),
+};
+
+const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null };
+let busyToken = 0;
+const undoStack = []; // per-layer bridge snapshots for Cmd/Ctrl-Z
+
+const editor = new LayerEditor(els.editor, {
+  onBridgesChanged,
+  onBeforeChange: () => pushUndo(),
+  onSample: (x, y) => { const hex = sampleImageColor(x, y); if (hex) { setColor(state.active, hex, 'Sampled'); ready(`Sampled ${hex} for layer ${state.active + 1}.`); } },
+});
+
+// ---- status helpers -------------------------------------------------------
+function busy(msg) { els.status.textContent = msg; els.status.className = 'status busy'; }
+function ready(msg = 'Ready.') { els.status.textContent = msg; els.status.className = 'status'; }
+function fail(msg) { els.status.textContent = msg; els.status.className = 'status error'; }
+// Yield to let the status text paint. Uses setTimeout (not requestAnimationFrame)
+// so it still fires when the tab is backgrounded, instead of hanging the pipeline.
+const raf = () => new Promise(r => setTimeout(r, 0));
+
+// ---- derived values -------------------------------------------------------
+function mmPerPx() { return toMm(state.params.targetWidth, state.params.unit) / (state.gray ? state.gray.width : 1); }
+function bridgeWidthPx() { return Math.max(1, Math.round(state.params.bridgeWidth / mmPerPx())); }
+function dims() { return physicalSize(state.gray.width, state.gray.height, toMm(state.params.targetWidth, state.params.unit)); }
+function marks() { return state.params.layers > 1 ? cornerMarks(state.gray.width, state.gray.height) : []; }
+
+function defaultColors(n) {
+  // Street-stencil greyscale: light grey -> near-black (white = the bare wall/paper).
+  if (n <= 1) return ['#1a1a1a'];
+  const out = [];
+  for (let i = 0; i < n; i++) { const t = i / (n - 1); out.push(toHex(`hsl(0 0% ${Math.round(82 - 68 * t)}%)`)); }
+  return out;
+}
+function defaultColorNames(n) { return new Array(n).fill(null); }
+function nearestCanLabel(hex) { const n = findNearestPaint(hex); return n ? `${n.brand} ${n.name}` : ''; }
+
+// Material / cut-method presets: default bridge width + the thinnest feature the
+// material can hold (mm), used to warn when a bridge would be too fragile.
+const MATERIALS = {
+  mylar: { bridge: 2.0, minFeatureMm: 0.6 },
+  vinyl: { bridge: 2.0, minFeatureMm: 1.0 },
+  card: { bridge: 3.0, minFeatureMm: 1.5 },
+  laser: { bridge: 1.2, minFeatureMm: 0.3 },
+};
+function materialInfo() { return MATERIALS[state.params && state.params.material] || MATERIALS.mylar; }
+
+// ---- pipeline -------------------------------------------------------------
+function reGray() {
+  const p = state.params;
+  const src = (p.removeBg && state.processedImg) ? state.processedImg : state.img;
+  state.gray = imageToGray(src, {
+    maxResolution: p.maxResolution, brightness: p.brightness * 1.2, contrast: p.contrast * 2,
+    invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels,
+  });
+  if (!p.thresholds || !p.thresholds.length) p.thresholds = autoThresholds(state.gray, p.layers);
+  buildSampleData(src);
+}
+
+// Cache the image at working resolution so the eyedropper can read true colours.
+function buildSampleData(src) {
+  const g = state.gray;
+  src = src || state.img;
+  if (!g || !src) { state.sampleData = null; return; }
+  const c = document.createElement('canvas'); c.width = g.width; c.height = g.height;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0, g.width, g.height);
+  state.sampleData = ctx.getImageData(0, 0, g.width, g.height);
+}
+function buildBrightMask(gray) {
+  const b = new Uint8Array(gray.data.length);
+  for (let i = 0; i < b.length; i++) b[i] = gray.data[i] >= 210 ? 1 : 0;
+  return b;
+}
+function sampleImageColor(x, y) {
+  const d = state.sampleData;
+  if (!d) return null;
+  const ix = Math.max(0, Math.min(d.width - 1, Math.round(x)));
+  const iy = Math.max(0, Math.min(d.height - 1, Math.round(y)));
+  const i = (iy * d.width + ix) * 4;
+  return '#' + [d.data[i], d.data[i + 1], d.data[i + 2]].map(n => n.toString(16).padStart(2, '0')).join('');
+}
+
+function reburn(layer) {
+  layer.workMask = layer.bridges.length ? burnBridges(layer.baseMask, layer.bridges) : layer.baseMask;
+  const { islandMask } = findIslands(layer.workMask);
+  const fm = new Uint8Array(layer.workMask.data.length);
+  for (let i = 0; i < fm.length; i++) fm[i] = islandMask.data[i] === 0 ? 1 : 0;
+  layer.floatingMask = fm;
+}
+function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask); }
+
+async function recomputeAll() {
+  if (!state.gray) return;
+  const my = ++busyToken;
+  undoStack.length = 0;
+  try {
+    busy('Building layers…'); await raf();
+    const p = state.params;
+    const minArea = p.minFeature * p.minFeature;          // despeckle: drop tiny specks
+    const minIslandArea = Math.max(64, (p.minFeature * 4) ** 2); // fill islands below this instead of bridging
+    const maxBridges = p.bridgeMode === 'none' ? 0 : 16;  // None = fill every island (no ties)
+    const brightMask = p.keepHighlights ? buildBrightMask(state.gray) : null;
+    const bw = bridgeWidthPx();
+    // Thin material holding frame — keeps the sheet connected at the edges so
+    // islands can always be bridged, and matches a real stencil's border.
+    const border = Math.max(2, Math.round(Math.min(state.gray.width, state.gray.height) * 0.01));
+    const built = buildLayers(state.gray, p.thresholds);
+    state.layers = built.map((L, i) => {
+      const cleaned = minArea > 1 ? despeckle(L.mask, minArea) : L.mask;
+      const framed = frameBorder(cleaned, border);
+      // Smart bridging: fill tiny islands, tie only the meaningful (capped) ones.
+      const { mask: baseMask, bridges } = prepareIslands(framed, { widthPx: bw, minIslandArea, maxBridges, brightMask, keepHighlights: p.keepHighlights });
+      const layer = { order: i, threshold: L.threshold, baseMask, bridges, workMask: null, floatingMask: null, traced: null };
+      reburn(layer);
+      return layer;
+    });
+    if (my !== busyToken) return;
+    busy('Vectorising…'); await raf();
+    for (const layer of state.layers) { retrace(layer); if (my !== busyToken) return; }
+    if (state.colors.length !== state.layers.length) {
+      state.colors = defaultColors(state.layers.length);
+      state.colorNames = defaultColorNames(state.layers.length);
+    }
+    state.active = Math.min(state.active, state.layers.length - 1);
+    refreshUI();
+    const minF = materialInfo().minFeatureMm;
+    if (p.bridgeMode !== 'none' && p.bridgeWidth < minF) {
+      els.status.textContent = `Heads-up: ${p.bridgeWidth} mm bridges are below this material's ~${minF} mm minimum — they may tear. Raise bridge width.`;
+      els.status.className = 'status busy';
+    } else if (p.bridgeMode !== 'none' && bridgeWidthPx() < 2) {
+      els.status.textContent = 'Heads-up: bridges are very thin at this output size — raise the bridge width or target size.';
+      els.status.className = 'status busy';
+    } else {
+      ready('Ready — adjust, fix bridges, then export.');
+    }
+  } catch (err) {
+    console.error(err);
+    fail('Error: ' + err.message);
+  }
+}
+
+// ---- UI sync --------------------------------------------------------------
+function edData(layer) { return { baseMask: layer.baseMask, bridges: layer.bridges, floatingMask: layer.floatingMask, bridgeWidth: bridgeWidthPx() }; }
+
+function refreshUI() {
+  renderGuide(els.guide, state.layers, state.colors, state.colorNames, state.active, { onSelect: setActive });
+  const layer = state.layers[state.active];
+  els.activeLabel.textContent = layer ? `Layer ${state.active + 1} of ${state.layers.length}` : '—';
+  if (layer) {
+    editor.setLayer(edData(layer));
+    setColorPanelValue(state.colors[state.active], state.colorNames[state.active], nearestCanLabel(state.colors[state.active]));
+    els.colorPanel.classList.add('show');
+  } else {
+    els.colorPanel.classList.remove('show');
+  }
+  updateCombined();
+  updateDims();
+  setExportsEnabled(state.layers.length > 0);
+  els.editorEmpty.style.display = state.layers.length ? 'none' : 'block';
+}
+
+function updateCombined() {
+  if (!state.layers.length || !state.layers[0].traced) { els.combined.innerHTML = '<p class="empty">No image yet.</p>'; return; }
+  const svg = combinedSVG(state.layers.map(l => l.traced), dims(), { colors: state.colors, marks: marks() });
+  els.combined.innerHTML = svg.replace(/^<\?xml[^>]*\?>\s*/, '');
+  // On screen, size by the viewBox (square) — the mm width/height are for export.
+  const node = els.combined.querySelector('svg');
+  if (node) { node.removeAttribute('width'); node.removeAttribute('height'); node.style.width = '100%'; node.style.height = 'auto'; }
+}
+
+function updateDims() {
+  if (!state.gray) { els.dims.textContent = '—'; return; }
+  const d = dims();
+  els.dims.textContent = `≈ ${Math.round(d.widthMm)} × ${Math.round(d.heightMm)} mm  ·  working ${state.gray.width}×${state.gray.height}px`;
+}
+
+function setExportsEnabled(on) { [els.exportSvg, els.exportCombined, els.exportPdf].forEach(b => { b.disabled = !on; }); }
+
+function setActive(i) {
+  state.active = i;
+  els.addBridge.classList.remove('active'); editor.setMode('select');
+  refreshUI();
+}
+function setColor(i, hex, name = null) {
+  if (i == null || i < 0 || !state.layers[i]) return;
+  state.colors[i] = hex;
+  state.colorNames[i] = name || findPaintName(hex);
+  renderGuide(els.guide, state.layers, state.colors, state.colorNames, state.active, { onSelect: setActive });
+  if (i === state.active) setColorPanelValue(state.colors[i], state.colorNames[i], nearestCanLabel(state.colors[i]));
+  updateCombined();
+}
+
+// editor commit (drag / add / delete) — recompute just the active layer
+function onBridgesChanged() {
+  const layer = state.layers[state.active];
+  if (!layer) return;
+  els.addBridge.classList.remove('active');
+  reburn(layer);
+  retrace(layer);
+  editor.refreshBase(layer.baseMask, layer.floatingMask);
+  updateCombined();
+}
+
+// Background removal toggle — lazy-loads an in-browser model only when enabled.
+async function toggleBackground() {
+  if (!state.img) return;
+  if (!state.params.removeBg) { state.processedImg = null; reGray(); recomputeAll(); return; }
+  const my = ++busyToken;
+  busy('Removing background… (first run downloads a model — please wait)');
+  try {
+    const { removeBackgroundToImage } = await import('./bg.js');
+    const out = await removeBackgroundToImage(state.img);
+    if (my !== busyToken) return; // superseded by a newer action
+    state.processedImg = out;
+    reGray();
+    await recomputeAll();
+  } catch (e) {
+    console.error(e);
+    state.processedImg = null;
+    els.removeBg.checked = false;
+    if (state.params) state.params.removeBg = false;
+    fail('Background removal failed (it needs internet to fetch the model): ' + e.message);
+  }
+}
+
+// ---- undo + eyedropper ----------------------------------------------------
+function pushUndo() {
+  const L = state.layers[state.active];
+  if (!L) return;
+  undoStack.push({ layer: state.active, bridges: L.bridges.map(b => ({ ...b })) });
+  if (undoStack.length > 60) undoStack.shift();
+}
+function undo() {
+  const u = undoStack.pop();
+  if (!u) { ready('Nothing to undo.'); return; }
+  const L = state.layers[u.layer];
+  if (!L) return;
+  L.bridges.length = 0; L.bridges.push(...u.bridges);
+  state.active = u.layer;
+  reburn(L); retrace(L);
+  refreshUI();
+  ready('Undid a bridge change.');
+}
+function startEyedrop() {
+  if (!state.layers.length) return;
+  editor.setMode('eyedrop');
+  busy(`Eyedropper — click your image to colour layer ${state.active + 1}.`);
+}
+
+// ---- control wiring -------------------------------------------------------
+function mergeParams() {
+  const p = readParams(els.root);
+  p.thresholds = state.params?.thresholds ? state.params.thresholds.slice() : [];
+  return p;
+}
+
+function onInput(el) { reflectValues(els.root); }
+
+function onChange(el) {
+  reflectValues(els.root);
+  state.params = mergeParams();
+  if (!state.img) return;
+  switch (el.id) {
+    case 'brightness': case 'contrast': case 'invert': case 'maxResolution':
+    case 'smooth': case 'autoLevels':
+      reGray(); recomputeAll(); break;
+    case 'layers':
+      state.params.thresholds = autoThresholds(state.gray, state.params.layers);
+      renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
+      recomputeAll(); break;
+    case 'minFeature':
+    case 'bridgeMode':
+    case 'keepHighlights':
+      recomputeAll(); break;
+    case 'material': {
+      const m = MATERIALS[state.params.material] || MATERIALS.mylar;
+      els.bridgeWidth.value = String(m.bridge); state.params.bridgeWidth = m.bridge;
+      reflectValues(els.root); editor.defaultWidth = bridgeWidthPx();
+      recomputeAll(); break;
+    }
+    case 'removeBg':
+      toggleBackground(); break;
+    case 'bridgeWidth':
+      editor.defaultWidth = bridgeWidthPx(); recomputeAll(); break;
+    case 'targetWidth': case 'unit':
+      editor.defaultWidth = bridgeWidthPx(); updateDims(); updateCombined(); break;
+  }
+}
+
+function onThreshold(i, value) {
+  if (!state.params) return;
+  state.params.thresholds[i] = value;
+  recomputeAll();
+}
+
+// ---- export ---------------------------------------------------------------
+function downloadBlob(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+function download(name, content, mime = 'image/svg+xml') { downloadBlob(name, new Blob([content], { type: mime })); }
+
+function colorLabel(i) {
+  const hex = state.colors[i];
+  if (state.colorNames[i]) return `${state.colorNames[i]} (${hex})`;
+  const n = findNearestPaint(hex);
+  return n ? `${hex} — closest can: ${n.brand} ${n.name}` : hex;
+}
+
+function exportReadme(d) {
+  return [
+    'SprayCan export',
+    '===============',
+    `Final size: ${Math.round(d.widthMm)} x ${Math.round(d.heightMm)} mm`,
+    `Layers: ${state.layers.length} (spray light -> dark; layer 1 first)`,
+    '',
+    'Files:',
+    ...state.layers.map((L, i) => `  layer-${i + 1}.svg  — spray ${i + 1} of ${state.layers.length}, ${colorLabel(i)}, ${L.bridges.length} bridge(s)`),
+    '  preview-all-layers.svg — all layers stacked, for reference',
+    '',
+    'Cut out the filled areas; KEEP the small bridges (ties) — they hold loose',
+    'pieces in place. Align layers with the red registration crosshairs and spray',
+    'the lightest layer first.',
+  ].join('\n');
+}
+
+async function exportPerLayer() {
+  if (!state.layers.length) return;
+  const d = dims();
+  busy('Packaging SVGs…'); await raf();
+  try {
+    const files = state.layers.map((layer, i) => ({
+      name: `layer-${i + 1}.svg`,
+      content: layerToSVG(layer.traced, d, { fill: state.colors[i], marks: marks() }),
+    }));
+    files.push({ name: 'preview-all-layers.svg', content: combinedSVG(state.layers.map(l => l.traced), d, { colors: state.colors, marks: marks() }) });
+    files.push({ name: 'README.txt', content: exportReadme(d) });
+    downloadBlob('stencil-svgs.zip', await makeZipBlob(files));
+    ready(`Exported ${state.layers.length}-layer SVG bundle (.zip).`);
+  } catch (e) { console.error(e); fail('SVG export failed: ' + e.message); }
+}
+
+function exportPreview() {
+  if (!state.layers.length) return;
+  download('stencil-preview.svg', combinedSVG(state.layers.map(l => l.traced), dims(), { colors: state.colors, marks: marks() }));
+}
+
+async function exportPDF() {
+  if (!state.layers.length) return;
+  busy('Building PDF (this can take a moment)…'); await raf();
+  try {
+    const pdf = await exportTiledPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin, overlap: state.params.overlap });
+    pdf.save('stencil.pdf');
+    ready('PDF exported.');
+  } catch (e) { console.error(e); fail('PDF export failed: ' + e.message); }
+}
+
+// ---- image intake ---------------------------------------------------------
+async function useImage(img) {
+  state.img = img;
+  state.processedImg = null;
+  els.removeBg.checked = false;
+  state.params = mergeParams();
+  state.params.thresholds = [];
+  reGray();
+  renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
+  await recomputeAll();
+}
+
+// A built-in demo (concentric tones + enclosed islands) so the tool can be
+// tried without a file. Drawn on a canvas, which doubles as an <img> source.
+function loadSample() {
+  const c = document.createElement('canvas'); c.width = c.height = 600;
+  const x = c.getContext('2d');
+  x.fillStyle = '#ffffff'; x.fillRect(0, 0, 600, 600);
+  const disc = (r, color) => { x.fillStyle = color; x.beginPath(); x.arc(300, 300, r, 0, Math.PI * 2); x.fill(); };
+  disc(250, '#111111');  // outer ring (dark)
+  disc(200, '#ffffff');  // gap -> makes the dark ring an island former
+  disc(150, '#777777');  // mid-tone disc
+  disc(95, '#ffffff');   // gap
+  disc(48, '#111111');   // centre dot (enclosed island)
+  busy('Loading sample…');
+  useImage(c).catch(err => fail('Sample failed: ' + err.message));
+}
+
+// ---- init -----------------------------------------------------------------
+function init() {
+  reflectValues(els.root);
+  setExportsEnabled(false);
+  bindControls(els.root, { onInput, onChange });
+  buildColorPanel(els.colorPanel, { palettes: PALETTES, onPick: (hex, name) => setColor(state.active, hex, name), onPickFromImage: startEyedrop });
+
+  els.file.addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    busy('Loading image…');
+    try { await useImage(await fileToImage(f)); }
+    catch (err) { fail('Could not load image: ' + err.message); }
+  });
+  els.sample.addEventListener('click', loadSample);
+
+  els.autoBridge.addEventListener('click', () => {
+    const layer = state.layers[state.active];
+    if (!layer) return;
+    pushUndo();
+    const nb = autoBridges(layer.baseMask, { widthPx: bridgeWidthPx() });
+    layer.bridges.length = 0; layer.bridges.push(...nb);
+    reburn(layer); retrace(layer);
+    editor.setLayer(edData(layer)); updateCombined();
+    ready(`Auto-placed ${nb.length} bridge(s) on layer ${state.active + 1}.`);
+  });
+  els.addBridge.addEventListener('click', () => {
+    const adding = !els.addBridge.classList.contains('active');
+    els.addBridge.classList.toggle('active', adding);
+    editor.setMode(adding ? 'add' : 'select');
+  });
+  els.delBridge.addEventListener('click', () => editor.removeSelected());
+
+  els.exportSvg.addEventListener('click', exportPerLayer);
+  els.exportCombined.addEventListener('click', exportPreview);
+  els.exportPdf.addEventListener('click', exportPDF);
+
+  document.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test(tag)) return;
+      if (!state.layers.length) return;
+      e.preventDefault(); undo();
+    }
+  });
+}
+
+init();
+
+// Debug hook (handy for automated verification; harmless in production).
+window.__sf = {
+  get state() { return state; },
+  get editor() { return editor; },
+  bridgeWidthPx,
+  buildPDF: () => exportTiledPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin, overlap: state.params.overlap }),
+};

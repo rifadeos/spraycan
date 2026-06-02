@@ -1,0 +1,146 @@
+// Bridges (ties): thin strips of MATERIAL burned across an OPEN gap to hold a
+// floating island in place. A bridge is { x1, y1, x2, y2, width } in working
+// pixel coords; per-layer bridge lists are managed by the caller.
+
+import { cloneMask } from './grid.js';
+import { findIslands } from './islands.js';
+
+// For every floating island, place one tie along the shortest OPEN gap to the
+// main (border-connected) material. Returns an array of bridges.
+export function autoBridges(mask, opts = {}) {
+  const widthPx = opts.widthPx ?? 4;
+  // Bound the search so each tie is cheap to find (a real bridge is short).
+  const maxGap = opts.maxGap ?? Math.max(40, Math.round(Math.min(mask.width, mask.height) * 0.3));
+  const { reached, labels } = findIslands(mask);
+
+  const islandPixels = new Map(); // label -> pixel indices
+  for (let i = 0; i < labels.length; i++) {
+    const l = labels[i];
+    if (l > 0) {
+      if (!islandPixels.has(l)) islandPixels.set(l, []);
+      islandPixels.get(l).push(i);
+    }
+  }
+
+  const bridges = [];
+  for (const pixels of islandPixels.values()) {
+    const tie = shortestTie(mask, reached, pixels, maxGap);
+    if (tie) bridges.push({ ...tie, width: widthPx });
+  }
+  return bridges;
+}
+
+// Multi-source BFS outward from an island's surrounding OPEN pixels until it
+// touches main material. Returns the straight tie island->main, or null.
+function shortestTie(mask, reached, islandPixels, maxGap) {
+  const { width: W, height: H, data } = mask;
+  const N = W * H;
+  const dist = new Int32Array(N).fill(-1);
+  const origin = new Int32Array(N).fill(-1); // island pixel that seeded this path
+  const queue = [];
+
+  for (const p of islandPixels) {
+    const x = p % W, y = (p - x) / W;
+    const nb = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+    for (const [nx, ny] of nb) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const q = ny * W + nx;
+      if (data[q] === 1 && dist[q] === -1) { dist[q] = 1; origin[q] = p; queue.push(q); }
+    }
+  }
+
+  let head = 0;
+  while (head < queue.length) {
+    const p = queue[head++];
+    if (dist[p] > maxGap) continue;
+    const x = p % W, y = (p - x) / W;
+    const nb = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+    for (const [nx, ny] of nb) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const q = ny * W + nx;
+      if (data[q] === 1) {
+        if (dist[q] === -1) { dist[q] = dist[p] + 1; origin[q] = origin[p]; queue.push(q); }
+      } else if (data[q] === 0 && reached[q]) {
+        const isl = origin[p];
+        const ix = isl % W, iy = (isl - ix) / W;
+        return { x1: ix, y1: iy, x2: nx, y2: ny };
+      }
+    }
+  }
+  return null;
+}
+
+// Smart island handling. Fill (spray solid) every island that is smaller than
+// minIslandArea, plus any beyond the maxBridges cap, then auto-bridge only the
+// kept (largest) islands. This stops detailed photos from spawning hundreds of
+// ties. Returns the simplified mask + the bridges for the kept islands.
+export function prepareIslands(mask, opts = {}) {
+  const widthPx = opts.widthPx ?? 4;
+  const minIslandArea = opts.minIslandArea ?? 0;
+  const maxBridges = opts.maxBridges ?? 24;
+  const brightMask = opts.brightMask || null;
+  const keepHighlights = opts.keepHighlights && brightMask;
+  const { labels, islands } = findIslands(mask);
+
+  const ranked = islands.slice().sort((a, b) => b.size - a.size);
+  const keep = new Set();
+  for (const isl of ranked) {
+    if (keep.size >= maxBridges) break;
+    if (isl.size >= minIslandArea) keep.add(isl.label);
+  }
+
+  // Always keep bright islands (eye/nose/teeth highlights) so they survive,
+  // regardless of the size threshold or the cap.
+  if (keepHighlights) {
+    const brightCount = new Map();
+    for (let i = 0; i < labels.length; i++) {
+      const l = labels[i];
+      if (l > 0 && brightMask[i]) brightCount.set(l, (brightCount.get(l) || 0) + 1);
+    }
+    // Keep only sizeable, mostly-bright islands, largest first, and CAP the
+    // total — otherwise a noisy or near-solid layer spawns thousands of ties
+    // and hangs the app.
+    const minBright = Math.max(16, minIslandArea * 0.15);
+    const cap = maxBridges + 12;
+    const bright = islands
+      .filter(isl => isl.size >= minBright && (brightCount.get(isl.label) || 0) >= isl.size * 0.5)
+      .sort((a, b) => b.size - a.size);
+    for (const isl of bright) { if (keep.size >= cap) break; keep.add(isl.label); }
+  }
+
+  const out = cloneMask(mask);
+  for (let i = 0; i < labels.length; i++) {
+    const l = labels[i];
+    if (l > 0 && !keep.has(l)) out.data[i] = 1; // fill: spray it solid
+  }
+
+  const bridges = keep.size ? autoBridges(out, { widthPx }) : [];
+  return { mask: out, bridges, kept: keep.size, filled: islands.length - keep.size };
+}
+
+// Burn bridges into a copy of the mask (set their footprint to MATERIAL).
+export function burnBridges(mask, bridges) {
+  const out = cloneMask(mask);
+  for (const b of bridges) stampSegment(out, b.x1, b.y1, b.x2, b.y2, b.width);
+  return out;
+}
+
+function stampSegment(mask, x1, y1, x2, y2, width) {
+  const { width: W, height: H, data } = mask;
+  const r = Math.max(0.5, width / 2);
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  const steps = Math.max(1, Math.ceil(len * 2));
+  for (let s = 0; s <= steps; s++) {
+    const t = s / steps;
+    const cx = x1 + dx * t, cy = y1 + dy * t;
+    const minX = Math.max(0, Math.floor(cx - r)), maxX = Math.min(W - 1, Math.ceil(cx + r));
+    const minY = Math.max(0, Math.floor(cy - r)), maxY = Math.min(H - 1, Math.ceil(cy + r));
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const ddx = x - cx, ddy = y - cy;
+        if (ddx * ddx + ddy * ddy <= r * r) data[y * W + x] = 0; // MATERIAL
+      }
+    }
+  }
+}

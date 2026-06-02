@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SprayCan — image → cuttable spray stencil</title>
+  <meta name="description" content="SprayCan turns any image into a layered, cuttable spray-paint stencil — sized to print, ready to cut and spray. Runs entirely in your browser; images never leave your device." />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="17.5" cy="4.3" r="1.3" fill="var(--accent-2)" />
+        <circle cx="20.6" cy="6.2" r="1" fill="var(--accent-2)" />
+        <circle cx="18.6" cy="8.4" r="1" fill="var(--accent-2)" />
+        <rect x="6.5" y="2.6" width="6" height="3.6" rx="1" fill="var(--accent)" />
+        <rect x="12" y="3.3" width="3" height="2.4" rx="0.6" fill="var(--accent)" />
+        <rect x="5" y="6.4" width="9" height="15" rx="2.4" fill="var(--ink)" />
+        <rect x="5" y="11.4" width="9" height="3" fill="var(--accent)" />
+      </svg>
+      <span class="brand-name">SprayCan</span>
+    </div>
+    <p class="tagline">Image → layered, cuttable spray stencil. Print it, cut it, spray it — all in your browser.</p>
+  </header>
+
+  <main class="app" id="root">
+    <aside class="panel">
+      <div class="field">
+        <label for="file">1 · Image</label>
+        <input id="file" type="file" accept="image/*" />
+        <div class="btn-row"><button id="sample" type="button">Try a sample image</button></div>
+        <label class="check"><input id="removeBg" data-param type="checkbox" /> Remove background (isolate the subject)</label>
+        <p class="hint">High-contrast subjects (portraits, logos, bold shapes) work best. Your image is processed locally and never uploaded. (Remove background downloads a small model the first time.)</p>
+      </div>
+
+      <fieldset class="group">
+        <legend>2 · Adjust</legend>
+        <label class="row">Brightness <span class="out" data-out="brightness">0</span>
+          <input id="brightness" data-param type="range" min="-100" max="100" value="0" />
+        </label>
+        <label class="row">Contrast <span class="out" data-out="contrast">0</span>
+          <input id="contrast" data-param type="range" min="-100" max="100" value="0" />
+        </label>
+        <label class="row">Smooth <span class="out" data-out="smooth">1</span>
+          <input id="smooth" data-param type="range" min="0" max="3" value="1" />
+        </label>
+        <label class="check"><input id="invert" data-param type="checkbox" /> Invert (dark background)</label>
+        <label class="check"><input id="autoLevels" data-param type="checkbox" checked /> Auto-levels (spread tones)</label>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>3 · Layers</legend>
+        <label class="row">Layers / colours <span class="out" data-out="layers">2</span>
+          <input id="layers" data-param type="range" min="1" max="6" value="2" />
+        </label>
+        <div id="thresholds" class="thresholds"></div>
+        <label class="row">Simplify <span class="out" data-out="minFeature">6</span>
+          <input id="minFeature" data-param type="range" min="0" max="20" value="6" />
+        </label>
+        <p class="hint">Higher = cleaner: drops tiny specks and fills small islands, so you get a few clean bridges instead of hundreds.</p>
+        <label class="check"><input id="keepHighlights" data-param type="checkbox" checked /> Keep highlights (eyes, nose, teeth)</label>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>4 · Bridges</legend>
+        <label class="row">Material / cut method
+          <select id="material" data-param>
+            <option value="mylar" selected>Mylar — general (2 mm ties)</option>
+            <option value="vinyl">Vinyl — craft cutter (2 mm)</option>
+            <option value="card">Card / acetate — hand-cut (3 mm)</option>
+            <option value="laser">Laser — fine detail (1.2 mm)</option>
+          </select>
+        </label>
+        <label class="row">Bridges
+          <select id="bridgeMode" data-param>
+            <option value="auto" selected>Auto — tie islands</option>
+            <option value="none">None — fill islands</option>
+          </select>
+        </label>
+        <label class="row">Bridge width (mm) <span class="out" data-out="bridgeWidth">2</span>
+          <input id="bridgeWidth" data-param type="range" min="1" max="15" step="0.5" value="2" />
+        </label>
+        <div class="btn-row">
+          <button id="autoBridge" type="button">Auto-bridge</button>
+          <button id="addBridge" type="button">+ Add tie</button>
+          <button id="delBridge" type="button">Delete tie</button>
+        </div>
+        <p class="hint">Tiny islands are filled automatically; only the big ones get a tie. Click a tie to select it, then drag its handles or Delete it. Use “+ Add tie” to draw your own. Any island that still floats shows in red.</p>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>5 · Output</legend>
+        <label class="row">Target width
+          <span class="size-input">
+            <input id="targetWidth" data-param type="number" min="1" step="1" value="30" />
+            <select id="unit" data-param>
+              <option value="cm" selected>cm</option>
+              <option value="in">in</option>
+              <option value="mm">mm</option>
+            </select>
+          </span>
+        </label>
+        <label class="row">Page size (for PDF)
+          <select id="pageSize" data-param>
+            <optgroup label="ISO A">
+              <option value="a6">A6 (105×148)</option>
+              <option value="a5">A5 (148×210)</option>
+              <option value="a4" selected>A4 (210×297)</option>
+              <option value="a3">A3 (297×420)</option>
+              <option value="a2">A2 (420×594)</option>
+              <option value="a1">A1 (594×841)</option>
+              <option value="a0">A0 (841×1189)</option>
+            </optgroup>
+            <optgroup label="US">
+              <option value="letter">Letter</option>
+              <option value="legal">Legal</option>
+              <option value="tabloid">Tabloid (11×17)</option>
+              <option value="arch_a">Arch A</option>
+              <option value="arch_b">Arch B</option>
+              <option value="arch_c">Arch C</option>
+              <option value="arch_d">Arch D</option>
+              <option value="arch_e">Arch E</option>
+            </optgroup>
+            <optgroup label="Cutting machines">
+              <option value="cricut_12x12">Cricut 12×12</option>
+              <option value="cricut_12x24">Cricut 12×24</option>
+              <option value="cameo_12x24">Silhouette Cameo 12×24</option>
+              <option value="glowforge_aura">Glowforge Aura</option>
+              <option value="glowforge_pro">Glowforge Pro</option>
+              <option value="xtool_p2">xTool P2</option>
+            </optgroup>
+          </select>
+        </label>
+        <p class="hint" id="dims">—</p>
+        <div class="btn-row">
+          <button id="exportSvg" type="button" class="primary">Export SVG (.zip)</button>
+        </div>
+        <div class="btn-row">
+          <button id="exportCombined" type="button">Export preview SVG</button>
+          <button id="exportPdf" type="button">Export PDF</button>
+        </div>
+      </fieldset>
+
+      <details class="advanced">
+        <summary>Advanced</summary>
+        <label class="row">Detail resolution
+          <select id="maxResolution" data-param>
+            <option value="800">Fast (800px)</option>
+            <option value="1200" selected>Balanced (1200px)</option>
+            <option value="1600">Fine (1600px)</option>
+            <option value="2000">Max (2000px)</option>
+          </select>
+        </label>
+        <label class="row">Print margin (mm) <span class="out" data-out="margin">10</span>
+          <input id="margin" data-param type="range" min="3" max="20" step="1" value="10" />
+        </label>
+        <label class="row">Tile overlap (mm) <span class="out" data-out="overlap">8</span>
+          <input id="overlap" data-param type="range" min="0" max="25" step="1" value="8" />
+        </label>
+      </details>
+
+      <div id="status" class="status" role="status">Load an image to begin.</div>
+    </aside>
+
+    <section class="stage">
+      <div id="guide" class="guide"></div>
+      <div id="colorPanel" class="color-panel"></div>
+      <div class="canvases">
+        <div class="canvas-card">
+          <h2>Editing: <span id="activeLabel">—</span></h2>
+          <div class="editor-wrap">
+            <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Load a picture or click “Try a sample image” to start.</p>
+            <canvas id="editor" tabindex="0"></canvas>
+          </div>
+        </div>
+        <div class="canvas-card">
+          <h2>Stacked preview</h2>
+          <div class="preview-wrap" id="combined"><p class="empty">No image yet.</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="vendor/imagetracer.js"></script>
+  <script src="vendor/jspdf.umd.min.js"></script>
+  <script src="vendor/svg2pdf.umd.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
