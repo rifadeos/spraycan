@@ -13,6 +13,7 @@ import { autoBridges, burnBridges, prepareIslands } from '../src/bridges.js';
 import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS } from '../src/exporters/pdf.js';
 import { autoLevels, medianFilter } from '../src/filters.js';
+import { edgeMask } from '../src/edges.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -149,6 +150,16 @@ test('autoLevels stretches the tonal range to 0..255', () => {
   assert.equal(r.data[0], 0);
   assert.equal(r.data[3], 255);
   assert.ok(r.data[1] > 0 && r.data[1] < r.data[2]);
+});
+
+test('edgeMask finds boundaries, not flat areas', () => {
+  const W = 12, H = 6;
+  const data = new Uint8ClampedArray(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) data[y * W + x] = x < 6 ? 0 : 255;
+  const m = edgeMask({ width: W, height: H, data }, { amount: 60, dilate: 1 });
+  let edges = 0; for (const v of m.data) edges += v;
+  assert.ok(edges > 0, 'edge detected at the boundary');
+  assert.equal(m.data[0], 0, 'flat corner stays material');
 });
 
 test('medianFilter removes a lone speckle', () => {

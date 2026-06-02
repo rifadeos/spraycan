@@ -3,6 +3,7 @@
 import { fileToImage, imageToGray } from './image.js';
 import { autoThresholds, buildLayers } from './posterize.js';
 import { despeckle, frameBorder } from './morphology.js';
+import { edgeMask } from './edges.js';
 import { findIslands } from './islands.js';
 import { autoBridges, burnBridges, prepareIslands } from './bridges.js';
 import { traceMaskToPaths } from './trace.js';
@@ -111,6 +112,7 @@ function sampleImageColor(x, y) {
 
 function reburn(layer) {
   layer.workMask = layer.bridges.length ? burnBridges(layer.baseMask, layer.bridges) : layer.baseMask;
+  if (layer.isEdge) { layer.floatingMask = new Uint8Array(layer.workMask.data.length); return; } // lines are the design
   const { islandMask } = findIslands(layer.workMask);
   const fm = new Uint8Array(layer.workMask.data.length);
   for (let i = 0; i < fm.length; i++) fm[i] = islandMask.data[i] === 0 ? 1 : 0;
@@ -123,7 +125,7 @@ function traceOpts() {
   const pathomit = [12, 6, 2, 1][d] ?? 2;
   return d >= 3 ? { pathomit, ltres: 0.5, qtres: 0.5 } : { pathomit };
 }
-function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, traceOpts()); }
+function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, layer.isEdge ? { pathomit: 8 } : traceOpts()); }
 
 async function recomputeAll() {
   if (!state.gray) return;
@@ -154,9 +156,22 @@ async function recomputeAll() {
       if (my !== busyToken) return;            // a newer change superseded this run
       busy(`Building layer ${i + 1} of ${built.length}…`); await raf();  // yield → UI stays responsive
     }
+    const tonalN = state.layers.length;
+    // Optional edge/line-detail layer: outlines + texture as the top (sprayed-last) layer.
+    if (p.edges) {
+      busy('Tracing edges…'); await raf();
+      let em = edgeMask(state.gray, { amount: p.edgeAmount });
+      em = despeckle(em, 6); // drop tiny edge specks — keeps it cuttable and the trace fast
+      const baseMask = frameBorder(em, border);
+      // Edge lines ARE the design: no island fill / bridging (would solid-fill the gaps).
+      const layer = { order: state.layers.length, threshold: -1, isEdge: true, baseMask, bridges: [], workMask: null, floatingMask: null, traced: null };
+      reburn(layer); retrace(layer); state.layers.push(layer);
+      if (my !== busyToken) return;
+    }
     if (state.colors.length !== state.layers.length) {
-      state.colors = defaultColors(state.layers.length);
-      state.colorNames = defaultColorNames(state.layers.length);
+      state.colors = defaultColors(tonalN);
+      state.colorNames = defaultColorNames(tonalN);
+      if (p.edges) { state.colors.push('#161616'); state.colorNames.push('Edge lines'); }
     }
     state.active = Math.min(state.active, state.layers.length - 1);
     refreshUI();
@@ -321,6 +336,8 @@ function onChange(el) {
     case 'minFeature':
     case 'bridgeMode':
     case 'keepHighlights':
+    case 'edges':
+    case 'edgeAmount':
       recomputeAll(); break;
     case 'detail':
       retraceAll(); break;

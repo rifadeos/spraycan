@@ -22,6 +22,8 @@ export function readParams(root) {
     detail: +g('detail').value,
     autoLevels: g('autoLevels').checked,
     keepHighlights: g('keepHighlights').checked,
+    edges: g('edges').checked,
+    edgeAmount: +g('edgeAmount').value,
     removeBg: g('removeBg').checked,
     maxResolution: +g('maxResolution').value,
     thresholds: [], // filled by app from the dynamic sliders

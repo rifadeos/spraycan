@@ -63,6 +63,11 @@
         </label>
         <p class="hint">Higher = cleaner: drops tiny specks and fills small islands, so you get a few clean bridges instead of hundreds.</p>
         <label class="check"><input id="keepHighlights" data-param type="checkbox" checked /> Keep highlights (eyes, nose, teeth)</label>
+        <label class="check"><input id="edges" data-param type="checkbox" /> Edge / line-detail layer</label>
+        <label class="row">Edge amount <span class="out" data-out="edgeAmount">55</span>
+          <input id="edgeAmount" data-param type="range" min="0" max="100" value="55" />
+        </label>
+        <p class="hint">Adds a top layer of outlines/texture (fur, creases) the tonal layers miss. Higher = more lines.</p>
       </fieldset>
 
       <fieldset class="group">
