@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SprayCan — image → cuttable spray stencil</title>
-  <meta name="description" content="SprayCan turns any image into a layered, cuttable spray-paint stencil — sized to print, ready to cut and spray. Runs entirely in your browser; images never leave your device." />
+  <meta name="description" content="SprayCan turns any image into a layered, cuttable spray-paint stencil — sized to print, ready to cut and spray. The core conversion runs entirely in your browser; optional cloud features (background removal, AI simplify) need internet." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -78,7 +78,7 @@
   <main class="app" id="root">
     <aside class="panel">
       <details class="group" open>
-        <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto picks the best fit per image; switch it or tweak the sliders from there. Your image is processed locally and never uploaded.">?</span></summary>
+        <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto picks the best fit per image; switch it or tweak the sliders from there. The core conversion runs locally; the optional Remove background and AI simplify use the internet.">?</span></summary>
         <label class="row">Preset
           <select id="preset" data-param>
             <option value="auto" selected>Auto (pick per image)</option>
@@ -90,9 +90,9 @@
             <option value="logo">Logo (B&amp;W)</option>
           </select>
         </label>
-        <button id="removeBgBtn" type="button" class="toggle-btn" aria-pressed="false">Remove background</button>
+        <button id="removeBgBtn" type="button" class="toggle-btn" aria-pressed="false" title="Isolates the subject with an in-browser model. First use downloads it (needs internet); after that it runs on your device.">Remove background</button>
         <input id="removeBg" data-param type="checkbox" class="vh" />
-        <button id="aiBtn" type="button" class="toggle-btn">✨ AI simplify (Gemini)</button>
+        <button id="aiBtn" type="button" class="toggle-btn" title="Optional: redraws your image as a flat stencil using Google Gemini. Sends the image to Google and needs your own API key.">✨ AI simplify (Gemini)</button>
         <details class="explain">
           <summary>Gemini API key (optional)</summary>
           <input id="aiKey" type="password" class="ai-field" placeholder="Google AI Studio API key" autocomplete="off" />
@@ -282,9 +282,7 @@
   </footer>
 
   <script src="vendor/imagetracer.js"></script>
-  <script src="vendor/jspdf.umd.min.js"></script>
-  <script src="vendor/svg2pdf.umd.min.js"></script>
-  <script src="vendor/jszip.min.js"></script>
+  <!-- jsPDF, svg2pdf and JSZip load on demand at export time (see src/vendor.js) — faster page load. -->
   <script type="module" src="src/app.js"></script>
 </body>
 </html>

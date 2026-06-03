@@ -86,7 +86,11 @@ export function autoThresholds(gray, layers) {
 
 function dedupeAscending(arr) {
   const s = [...arr].sort((a, b) => a - b);
-  for (let i = 1; i < s.length; i++) if (s[i] <= s[i - 1]) s[i] = s[i - 1] + 1;
+  // Force strictly ascending, but clamp at 255: on a near-flat image the bumped
+  // values could otherwise exceed 255, making `data < threshold` always true and
+  // every layer fully OPEN. Clamping keeps thresholds valid (worst case: a couple
+  // of near-empty top layers instead of all-black ones).
+  for (let i = 1; i < s.length; i++) if (s[i] <= s[i - 1]) s[i] = Math.min(255, s[i - 1] + 1);
   return s;
 }
 

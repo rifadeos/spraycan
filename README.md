@@ -3,20 +3,23 @@
 Turn any image into a **layered, cuttable spray-paint stencil** — right in your browser.
 Upload a photo, choose how many colour layers you want, let it auto-place the *bridges* that
 keep islands from falling out, then export clean **SVG** files (for a cutting machine) or a
-tiled **PDF** (for printing and hand-cutting).
+**PDF proof** (one page per layer at true size, for a print/cut shop).
 
-No server, no upload, no build step. Your image never leaves your device.
+No build step and no account. The **core conversion runs entirely in your browser** — your image
+isn't uploaded for it. Two *optional* features reach the internet only when you switch them on:
+**Remove background** downloads a small model on first use (then runs locally), and **AI simplify**
+sends your image to Google's Gemini API using your own key.
 
 ## What it does
 
-- **Posterises** an image into 1–4 nested tonal layers (one spray colour each, light → dark).
+- **Posterises** an image into 1–6 nested tonal layers (one spray colour each, light → dark).
 - **Vectorises** each layer to smooth SVG paths, sized to a real-world width (cm / in / mm).
 - **Detects floating islands** (the middle of an *O*, the catch-light in an eye, …) and
   **auto-bridges** them so they stay attached when cut. Bridges are editable: drag, add, delete.
 - Adds a **material holding frame** and **registration marks** so multi-layer stencils line up.
-- Exports a **ZIP of per-layer cut files** (one SVG per layer + a stacked preview) and a **PDF**:
-  *one layer per page at true size* (for a print/cut shop) by default, or a *real-scale tiled* version
-  (print at home and tape together) — your choice in the Output panel.
+- Exports a **ZIP of per-layer cut files** (one SVG per layer + a stacked preview) and a **PDF proof**:
+  a cut-&-spray cover plus *one layer per page at true size* (1:1 when it fits the page) — the format
+  to hand a print/cut shop.
 
 ## Run it
 

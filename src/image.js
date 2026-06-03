@@ -2,7 +2,7 @@
 // Produces the working-resolution { width, height, data:Uint8ClampedArray }
 // luminance buffer the rest of the pipeline consumes.
 
-import { autoLevels as stretchLevels, clahe, bilateralFilter, medianFilter, flipHorizontal, flipVertical } from './filters.js';
+import { clahe, bilateralFilter, flipHorizontal, flipVertical } from './filters.js';
 
 export function fitSize(w, h, max) {
   const longEdge = Math.max(w, h);

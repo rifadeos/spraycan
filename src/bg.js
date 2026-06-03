@@ -13,9 +13,24 @@ async function loadLib() {
   return removeBgFn;
 }
 
-function toCanvas(img) {
-  const w = img.naturalWidth || img.width;
-  const h = img.naturalHeight || img.height;
+// Cap the model input: big phone photos (4000px+) process far faster downscaled,
+// and posterised stencil shapes don't need more resolution than this.
+const MAX_BG_EDGE = 1280;
+
+function canvasToBlob(canvas, type = 'image/png') {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b)
+      : reject(new Error('Could not read the image (the canvas may be blocked by the browser).')), type);
+  });
+}
+
+function toCanvas(img, maxEdge = 0) {
+  let w = img.naturalWidth || img.width;
+  let h = img.naturalHeight || img.height;
+  if (maxEdge > 0) {
+    const long = Math.max(w, h);
+    if (long > maxEdge) { const s = maxEdge / long; w = Math.max(1, Math.round(w * s)); h = Math.max(1, Math.round(h * s)); }
+  }
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   c.getContext('2d').drawImage(img, 0, 0, w, h);
   return c;
@@ -36,8 +51,8 @@ function blobToImage(blob) {
 // caller skip isolation when there's no clear subject (≈0) or it kept everything (≈1).
 export async function removeBackgroundToImage(srcImg, onProgress) {
   const fn = await loadLib();
-  const srcCanvas = toCanvas(srcImg);
-  const srcBlob = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
+  const srcCanvas = toCanvas(srcImg, MAX_BG_EDGE);
+  const srcBlob = await canvasToBlob(srcCanvas);
   const cutoutBlob = await fn(srcBlob, onProgress ? { progress: onProgress } : undefined);
   const cutout = await blobToImage(cutoutBlob);
 
@@ -57,6 +72,6 @@ export async function removeBackgroundToImage(srcImg, onProgress) {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
   ctx.drawImage(cutout, 0, 0, w, h);
-  const image = await blobToImage(await new Promise(r => c.toBlob(r, 'image/png')));
+  const image = await blobToImage(await canvasToBlob(c));
   return { image, coverage };
 }

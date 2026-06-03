@@ -24,18 +24,20 @@ export class LayerEditor {
     this.pending = null;   // first click of an add
     this.pendingEnd = null;
     this.defaultWidth = 6;
+    this.mmPerPx = 0; // set per layer so a selected tie can show its real width in mm
     this.maskW = this.maskH = 1;
     this.baseImage = null;
     this._bind();
   }
 
-  setLayer({ baseMask, bridges, floatingMask, bridgeWidth }) {
+  setLayer({ baseMask, bridges, floatingMask, bridgeWidth, mmPerPx }) {
     this.maskW = baseMask.width;
     this.maskH = baseMask.height;
     this.canvas.width = this.maskW;
     this.canvas.height = this.maskH;
     this.bridges = bridges;
     if (bridgeWidth) this.defaultWidth = bridgeWidth;
+    if (mmPerPx) this.mmPerPx = mmPerPx;
     this.selected = -1;
     this.pending = null;
     this.refreshBase(baseMask, floatingMask);
@@ -101,6 +103,20 @@ export class LayerEditor {
         ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2);
         ctx.fillStyle = '#fff'; ctx.fill();
         ctx.lineWidth = Math.max(1, r * 0.4); ctx.strokeStyle = '#0a7d2c'; ctx.stroke();
+      }
+      // Real-world tie width, so the user can judge whether it'll hold / show.
+      if (this.mmPerPx > 0) {
+        const mm = b.width * this.mmPerPx;
+        const txt = (mm < 10 ? mm.toFixed(1) : Math.round(mm)) + ' mm';
+        const fs = Math.max(9, Math.min(this.maskW, this.maskH) * 0.032);
+        const mx = (b.x1 + b.x2) / 2, my = (b.y1 + b.y2) / 2;
+        ctx.save();
+        ctx.font = `600 ${fs}px Inter, system-ui, sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.lineWidth = Math.max(2, fs * 0.24); ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.strokeText(txt, mx, my - r - fs * 0.35);
+        ctx.fillStyle = '#fff'; ctx.fillText(txt, mx, my - r - fs * 0.35);
+        ctx.restore();
       }
     } else {
       const r = this._dotR();

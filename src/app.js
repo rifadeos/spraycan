@@ -12,11 +12,12 @@ import { cornerMarks } from './registration.js';
 import { layerToSVG, combinedSVG } from './exporters/svg.js';
 import { exportPDF as buildPDF } from './exporters/pdf.js';
 import { makeZipBlob } from './exporters/bundle.js';
+import { ensurePdfLibs, ensureZip } from './vendor.js';
 import { toHex } from './color.js';
 import { PALETTES, findPaintName, findNearestPaint } from './palettes.js';
 import { readParams, reflectValues, bindControls, renderThresholds, addSteppers } from './ui/controls.js';
 import { renderGuide } from './ui/guide.js';
-import { PRESETS, imageStats, pickPreset } from './presets.js';
+import { PRESETS, imageStats, pickPreset, skinFraction } from './presets.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
 
@@ -35,7 +36,7 @@ const els = {
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
 };
 
-const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null };
+const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false };
 let busyToken = 0;
 const undoStack = []; // per-layer bridge snapshots for Cmd/Ctrl-Z
 
@@ -82,13 +83,15 @@ const MATERIALS = {
 function materialInfo() { return MATERIALS[state.params && state.params.material] || MATERIALS.mylar; }
 
 // ---- pipeline -------------------------------------------------------------
-function reGray() {
+function reGray(opts = {}) {
   const p = state.params;
   const src = state.processedImg || state.img; // bg-removed or AI-simplified base, else the original
+  const maxResolution = opts.maxResolution || p.maxResolution;
   state.gray = imageToGray(src, {
-    maxResolution: p.maxResolution, brightness: p.brightness * 1.2, contrast: p.contrast * 2,
+    maxResolution, brightness: p.brightness * 1.2, contrast: p.contrast * 2,
     invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip,
   });
+  state.grayPreview = maxResolution < p.maxResolution; // true → this is a low-res drag preview, not final
   if (!p.thresholds || !p.thresholds.length) p.thresholds = autoThresholds(state.gray, p.layers);
   buildSampleData(src);
 }
@@ -103,9 +106,12 @@ function buildSampleData(src) {
   ctx.drawImage(src, 0, 0, g.width, g.height);
   state.sampleData = ctx.getImageData(0, 0, g.width, g.height);
 }
-function buildBrightMask(gray) {
+// Pixels at/above `thresh` are protected from being sprayed (kept as bare wall),
+// so highlights survive posterising. Portraits use a much lower threshold so the
+// continuous mid-tones of a face stay connected instead of punching "face holes".
+function buildBrightMask(gray, thresh = 210) {
   const b = new Uint8Array(gray.data.length);
-  for (let i = 0; i < b.length; i++) b[i] = gray.data[i] >= 210 ? 1 : 0;
+  for (let i = 0; i < b.length; i++) b[i] = gray.data[i] >= thresh ? 1 : 0;
   return b;
 }
 function sampleImageColor(x, y) {
@@ -146,14 +152,20 @@ async function recomputeAll() {
     const minArea = p.minFeature * p.minFeature;          // despeckle: drop tiny specks
     const minIslandArea = Math.max(64, (p.minFeature * 4) ** 2); // fill islands below this instead of bridging
     const maxBridges = p.bridgeMode === 'none' ? 0 : 16;  // None = fill every island (no ties)
-    const brightMask = p.keepHighlights ? buildBrightMask(state.gray) : null;
+    // Portraits protect facial mid-tones (low threshold) so a face stays one
+    // continuous shape; other images only protect true highlights.
+    const brightThresh = state.presetId === 'portrait' ? 165 : 210;
+    const brightMask = p.keepHighlights ? buildBrightMask(state.gray, brightThresh) : null;
     const bw = bridgeWidthPx();
     // Thin material holding frame — keeps the sheet connected at the edges so
     // islands can always be bridged, and matches a real stencil's border.
     const border = Math.max(2, Math.round(Math.min(state.gray.width, state.gray.height) * 0.01));
     const built = buildLayers(state.gray, p.thresholds);
-    state.layers = [];
+    // Build into a local array and commit atomically at the end, so a superseded
+    // run (or a mid-build error) never leaves state.layers half-built.
+    const newLayers = [];
     for (let i = 0; i < built.length; i++) {
+      if (my !== busyToken) return;            // a newer change superseded this run — leave state untouched
       const cleaned = minArea > 1 ? despeckle(built[i].mask, minArea) : built[i].mask;
       const framed = frameBorder(cleaned, border);
       // Smart bridging: fill tiny islands, tie only the meaningful (capped) ones.
@@ -161,11 +173,10 @@ async function recomputeAll() {
       const layer = { order: i, threshold: built[i].threshold, baseMask, bridges, workMask: null, floatingMask: null, traced: null };
       reburn(layer);
       retrace(layer);
-      state.layers.push(layer);
-      if (my !== busyToken) return;            // a newer change superseded this run
+      newLayers.push(layer);
       busy(`Building layer ${i + 1} of ${built.length}…`); await raf();  // yield → UI stays responsive
     }
-    const tonalN = state.layers.length;
+    const tonalN = newLayers.length;
     // Optional edge/line-detail layer: outlines + texture as the top (sprayed-last) layer.
     if (p.edges) {
       busy('Tracing outlines…'); await raf();
@@ -181,10 +192,11 @@ async function recomputeAll() {
       em = despeckle(em, edgeMin);                // final tidy (open specks + material slivers)
       const baseMask = frameBorder(em, border);
       // Edge lines ARE the design: no island fill / bridging (would solid-fill the gaps).
-      const layer = { order: state.layers.length, threshold: -1, isEdge: true, baseMask, bridges: [], workMask: null, floatingMask: null, traced: null };
-      reburn(layer); retrace(layer); state.layers.push(layer);
-      if (my !== busyToken) return;
+      const layer = { order: newLayers.length, threshold: -1, isEdge: true, baseMask, bridges: [], workMask: null, floatingMask: null, traced: null };
+      reburn(layer); retrace(layer); newLayers.push(layer);
     }
+    if (my !== busyToken) return;   // final supersession check before the atomic commit
+    state.layers = newLayers;       // commit
     if (state.colors.length !== state.layers.length) {
       state.colors = defaultColors(tonalN);
       state.colorNames = defaultColorNames(tonalN);
@@ -200,10 +212,17 @@ async function recomputeAll() {
       els.status.textContent = 'Heads-up: bridges are very thin at this output size — raise the bridge width or target size.';
       els.status.className = 'status busy';
     } else {
-      const ties = state.layers.reduce((n, L) => n + (L.isEdge ? 0 : L.bridges.length), 0);
-      ready(ties
-        ? `Ready — auto-placed ${ties} tie(s) sized for ${state.params.material} to hold every island. Adjust or export.`
-        : 'Ready — no islands to tie. Adjust or export.');
+      const tieCounts = state.layers.filter(L => !L.isEdge).map(L => L.bridges.length);
+      const ties = tieCounts.reduce((a, b) => a + b, 0);
+      const maxTies = tieCounts.length ? Math.max(...tieCounts) : 0;
+      if (maxTies >= 14) {
+        els.status.textContent = `Heads-up: a layer has ${maxTies} ties (${ties} total) — raise Simplify or lower Layers to cut down the marks you'll touch up.`;
+        els.status.className = 'status busy';
+      } else {
+        ready(ties
+          ? `Ready — auto-placed ${ties} tie(s) sized for ${state.params.material} to hold every island. Adjust or export.`
+          : 'Ready — no islands to tie. Adjust or export.');
+      }
     }
   } catch (err) {
     console.error(err);
@@ -225,7 +244,7 @@ async function retraceAll() {
 }
 
 // ---- UI sync --------------------------------------------------------------
-function edData(layer) { return { baseMask: layer.baseMask, bridges: layer.bridges, floatingMask: layer.floatingMask, bridgeWidth: bridgeWidthPx() }; }
+function edData(layer) { return { baseMask: layer.baseMask, bridges: layer.bridges, floatingMask: layer.floatingMask, bridgeWidth: bridgeWidthPx(), mmPerPx: mmPerPx() }; }
 
 function refreshUI() {
   renderGuide(els.guide, state.layers, state.colors, state.colorNames, state.active, { onSelect: setActive });
@@ -325,13 +344,17 @@ function onBridgesChanged() {
 
 // Background removal toggle — lazy-loads an in-browser model only when enabled.
 async function toggleBackground() {
-  if (!state.img) return;
-  if (!state.params.removeBg) { state.processedImg = null; reGray(); recomputeAll(); return; }
+  if (!state.img || !state.params) return;
+  if (!state.params.removeBg) { state.processedImg = null; reGray(); await recomputeAll(); return; }
   const my = ++busyToken;
   busy('Removing background… (first run downloads a model — please wait)');
   try {
     const { removeBackgroundToImage } = await import('./bg.js');
-    const res = await removeBackgroundToImage(state.img);
+    const res = await removeBackgroundToImage(state.img, (key, current, total) => {
+      if (my !== busyToken) return;
+      const pct = total ? Math.round(100 * current / total) : null;
+      busy(pct != null ? `Removing background… ${pct}% (first run downloads a model)` : 'Removing background…');
+    });
     if (my !== busyToken) return; // superseded by a newer action
     if (res.coverage < 0.05 || res.coverage > 0.95) {
       // No clear subject (≈0) or it kept everything (≈1) → don't isolate; use the full image.
@@ -349,7 +372,10 @@ async function toggleBackground() {
     state.processedImg = null;
     els.removeBg.checked = false;
     if (state.params) state.params.removeBg = false;
-    fail('Background removal failed (it needs internet to fetch the model): ' + e.message);
+    syncRemoveBgBtn();
+    // Still give the user a stencil from the full image rather than nothing.
+    try { reGray(); await recomputeAll(); } catch { /* leave whatever's there */ }
+    fail('Background removal failed (needs internet to fetch the model) — using the full image.');
   }
 }
 
@@ -446,8 +472,9 @@ function resetToDefaults() {
 
 // Apply a preset: reset the look to a clean baseline, then layer the preset's
 // control values on top, then recompute (background removal handles its own).
-function applyPreset(id) {
+async function applyPreset(id) {
   const preset = PRESETS[id] || PRESETS.photo;
+  state.presetId = PRESETS[id] ? id : 'photo';   // drives face-aware highlight protection
   applyDefaults(LOOK_IDS);
   Object.entries(preset.params).forEach(([cid, val]) => {
     const el = document.getElementById(cid);
@@ -459,10 +486,12 @@ function applyPreset(id) {
   state.params = mergeParams();
   state.params.thresholds = [];
   if (!state.img) return;
-  reGray();
-  renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-  if (state.params.removeBg) return toggleBackground();
-  return recomputeAll();
+  try {
+    reGray();
+    renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
+    if (state.params.removeBg) await toggleBackground();
+    else await recomputeAll();
+  } catch (e) { console.error(e); fail('Could not apply preset: ' + e.message); }
 }
 
 // Resolve the preset to apply for the current image: an explicit choice, or
@@ -472,48 +501,94 @@ function presetForImage(img) {
   if (sel !== 'auto') { if (els.preset) els.preset.title = ''; return sel; }
   const probe = imageToGray(img, { maxResolution: 360, autoLevels: false, smooth: 0 });
   const aspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height || 1);
-  const id = pickPreset(imageStats(probe, aspect));
+  const stats = imageStats(probe, aspect);
+  stats.skinFraction = skinFractionFromImage(img, 360); // detect faces → Portrait preset
+  const id = pickPreset(stats);
   if (els.preset) els.preset.title = 'Auto-picked: ' + (PRESETS[id]?.label || id);
   return id;
 }
 
-function onInput(el) { reflectValues(els.root); }
+// Small RGBA probe so we can detect skin tones for the portrait auto-pick.
+function skinFractionFromImage(img, max = 360) {
+  try {
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const s = Math.min(1, max / Math.max(iw, ih));
+    const w = Math.max(1, Math.round(iw * s)), h = Math.max(1, Math.round(ih * s));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    return skinFraction(ctx.getImageData(0, 0, w, h).data, w, h);
+  } catch { return 0; }
+}
 
-function onChange(el) {
+let previewTimer = 0;
+const PREVIEW_IDS = new Set(['brightness', 'contrast', 'smooth', 'layers', 'minFeature', 'edgeAmount', 'bridgeWidth']);
+const PREVIEW_MAX = 700; // working resolution for the live drag preview
+
+function onInput(el) {
+  reflectValues(els.root);
+  if (!state.img || !PREVIEW_IDS.has(el.id)) return;
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => runPreview(el.id), 110);
+}
+
+// Fast low-res recompute while a slider is dragged, so the result updates live.
+// The full-res run on "change" (release) supersedes it via busyToken, and
+// onChange cancels any still-pending preview so a stale low-res result can't win.
+function runPreview(id) {
+  if (!state.img) return;
+  state.params = mergeParams();
+  if (id === 'layers') state.params.thresholds = [];
+  try {
+    reGray({ maxResolution: Math.min(PREVIEW_MAX, state.params.maxResolution) });
+    if (id === 'layers') renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
+    recomputeAll();
+  } catch { /* preview is best-effort */ }
+}
+
+async function onChange(el) {
+  clearTimeout(previewTimer);            // cancel a pending low-res preview
   reflectValues(els.root);
   state.params = mergeParams();
   if (!state.img) return;
-  switch (el.id) {
-    case 'brightness': case 'contrast': case 'invert': case 'maxResolution':
-    case 'smooth': case 'autoLevels': case 'mirror': case 'vflip':
-      reGray(); recomputeAll(); break;
-    case 'layers':
-      state.params.thresholds = autoThresholds(state.gray, state.params.layers);
-      renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-      recomputeAll(); break;
-    case 'minFeature':
-    case 'bridgeMode':
-    case 'keepHighlights':
-    case 'edges':
-    case 'edgeAmount':
-      recomputeAll(); break;
-    case 'detail':
-      retraceAll(); break;
-    case 'material': {
-      const m = MATERIALS[state.params.material] || MATERIALS.mylar;
-      els.bridgeWidth.value = String(m.bridge); state.params.bridgeWidth = m.bridge;
-      reflectValues(els.root); editor.defaultWidth = bridgeWidthPx();
-      recomputeAll(); break;
+  const stale = state.grayPreview;       // a drag preview may have left state at low resolution
+  try {
+    switch (el.id) {
+      case 'brightness': case 'contrast': case 'invert': case 'maxResolution':
+      case 'smooth': case 'autoLevels': case 'mirror': case 'vflip':
+        reGray(); await recomputeAll(); break;
+      case 'layers':
+        reGray();                        // ensure full-res before sampling thresholds
+        state.params.thresholds = autoThresholds(state.gray, state.params.layers);
+        renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
+        await recomputeAll(); break;
+      case 'minFeature':
+      case 'bridgeMode':
+      case 'keepHighlights':
+      case 'edges':
+      case 'edgeAmount':
+        if (stale) reGray();             // restore full resolution after a preview
+        await recomputeAll(); break;
+      case 'detail':
+        if (stale) { reGray(); await recomputeAll(); } else { await retraceAll(); }
+        break;
+      case 'material': {
+        const m = MATERIALS[state.params.material] || MATERIALS.mylar;
+        els.bridgeWidth.value = String(m.bridge); state.params.bridgeWidth = m.bridge;
+        reflectValues(els.root); editor.defaultWidth = bridgeWidthPx();
+        if (stale) reGray();
+        await recomputeAll(); break;
+      }
+      case 'preset':
+        await applyPreset(presetForImage(state.img)); break;
+      case 'removeBg':
+        await toggleBackground(); break;
+      case 'bridgeWidth':
+        editor.defaultWidth = bridgeWidthPx(); if (stale) reGray(); await recomputeAll(); break;
+      case 'targetWidth': case 'unit':
+        editor.defaultWidth = bridgeWidthPx(); updateDims(); updateCombined(); break;
     }
-    case 'preset':
-      applyPreset(presetForImage(state.img)); break;
-    case 'removeBg':
-      toggleBackground(); break;
-    case 'bridgeWidth':
-      editor.defaultWidth = bridgeWidthPx(); recomputeAll(); break;
-    case 'targetWidth': case 'unit':
-      editor.defaultWidth = bridgeWidthPx(); updateDims(); updateCombined(); break;
-  }
+  } catch (err) { console.error(err); fail('Error: ' + err.message); }
 }
 
 function onThreshold(i, value) {
@@ -561,6 +636,7 @@ async function exportPerLayer() {
   const d = dims();
   busy('Packaging SVGs…'); await raf();
   try {
+    await ensureZip();   // JSZip is loaded on first export, not at page load
     const files = state.layers.map((layer, i) => ({
       name: `layer-${i + 1}.svg`,
       content: layerToSVG(layer.traced, d, { fill: state.colors[i], marks: marks() }),
@@ -576,6 +652,7 @@ async function exportPDF() {
   if (!state.layers.length) return;
   busy('Building PDF (this can take a moment)…'); await raf();
   try {
+    await ensurePdfLibs();   // jsPDF + svg2pdf are loaded on first export, not at page load
     const pdf = await buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin });
     pdf.save('stencil.pdf');
     ready('PDF exported.');
@@ -586,6 +663,8 @@ async function exportPDF() {
 async function useImage(img) {
   state.img = img;
   state.processedImg = null;
+  state.active = 0;                          // new image → start at the first layer
+  state.colors = []; state.colorNames = [];  // …and fresh default colours (don't carry the last image's)
   if (els.aiBtn) els.aiBtn.classList.remove('active');   // new image → drop any AI-simplified base
   // Start from a tuned preset (auto-picked per image, or the user's explicit choice)
   // so the upload looks near-finished instead of starting from a generic default.
@@ -704,5 +783,5 @@ window.__sf = {
   get state() { return state; },
   get editor() { return editor; },
   bridgeWidthPx,
-  buildPDF: () => buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin }),
+  buildPDF: async () => { await ensurePdfLibs(); return buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin }); },
 };

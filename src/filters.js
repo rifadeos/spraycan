@@ -99,7 +99,10 @@ export function clahe(gray, opts = {}) {
         for (let i = 0; i < 256; i++) if (hist[i] > limit) { excess += hist[i] - limit; hist[i] = limit; }
         const add = Math.floor(excess / 256);
         for (let i = 0; i < 256; i++) hist[i] += add;
-        let cdf = 0; const scale = 255 / count;
+        // Normalise by the ACTUAL post-clip total (not the original count) so the
+        // dropped remainder of `excess` doesn't compress the mapping toward grey.
+        let total2 = 0; for (let i = 0; i < 256; i++) total2 += hist[i];
+        let cdf = 0; const scale = total2 > 0 ? 255 / total2 : 0;
         for (let i = 0; i < 256; i++) { cdf += hist[i]; map[i] = Math.min(255, Math.round(cdf * scale)); }
       } else for (let i = 0; i < 256; i++) map[i] = i;
       maps[gy * nx + gx] = map;

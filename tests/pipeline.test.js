@@ -14,7 +14,7 @@ import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
 import { autoLevels, clahe, bilateralFilter, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
-import { PRESETS, imageStats, pickPreset } from '../src/presets.js';
+import { PRESETS, imageStats, pickPreset, skinFraction } from '../src/presets.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -78,6 +78,18 @@ test('autoThresholds (Otsu) splits a bimodal image between the two modes', () =>
   const g = gray(rows);
   const [t] = autoThresholds(g, 1);
   assert.ok(t > 40 && t <= 210, `Otsu threshold ${t} should sit between the two modes`);
+});
+
+test('autoThresholds clamp ≤255 on a near-flat image (no all-OPEN layers)', () => {
+  // A nearly uniform image collapses every Otsu cut to one value; forcing them
+  // strictly ascending must not exceed 255 (which would make `data < t` always
+  // true → every layer fully OPEN/black).
+  const rows = [];
+  for (let y = 0; y < 8; y++) rows.push(new Array(8).fill(254));
+  const t = autoThresholds(gray(rows), 6);
+  assert.equal(t.length, 6);
+  for (const v of t) assert.ok(v >= 0 && v <= 255, `threshold ${v} must stay ≤255`);
+  for (let i = 1; i < t.length; i++) assert.ok(t[i] >= t[i - 1], 'non-decreasing');
 });
 
 test('layers nest: darker layer OPEN ⊆ lighter layer OPEN', () => {
@@ -254,6 +266,28 @@ test('pickPreset maps image stats to a sensible preset', () => {
   assert.equal(pickPreset({ std: 70, toneCount: 4 }), 'logo');      // few flat tones + contrast → graphic/logo
   assert.equal(pickPreset({ std: 40, toneCount: 60 }), 'subject');  // a photo → isolate the subject
   assert.equal(pickPreset({ std: 35, toneCount: 90 }), 'subject');  // busy photo → still subject (with fallback)
+});
+
+test('pickPreset routes a face to the portrait preset', () => {
+  assert.equal(pickPreset({ std: 40, toneCount: 60, skinFraction: 0.3 }), 'portrait'); // lots of skin → portrait
+  assert.equal(pickPreset({ std: 40, toneCount: 60, skinFraction: 0.02 }), 'subject'); // little skin → subject
+  assert.equal(pickPreset({ std: 70, toneCount: 4, skinFraction: 0 }), 'logo');         // flat graphic still logo
+});
+
+test('skinFraction detects skin tones and ignores non-skin', () => {
+  const W = 20, H = 20;
+  const skin = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < skin.length; i += 4) { skin[i] = 200; skin[i + 1] = 140; skin[i + 2] = 110; skin[i + 3] = 255; }
+  assert.ok(skinFraction(skin, W, H) > 0.5, 'a skin-toned image reads as mostly skin');
+  const blue = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < blue.length; i += 4) { blue[i] = 40; blue[i + 1] = 80; blue[i + 2] = 200; blue[i + 3] = 255; }
+  assert.equal(skinFraction(blue, W, H), 0, 'a blue image has no skin');
+});
+
+test('portrait preset isolates the subject and uses few layers (fights face holes)', () => {
+  assert.equal(PRESETS.portrait.params.removeBg, true);
+  assert.ok(PRESETS.portrait.params.layers <= 4, 'portrait uses few layers');
+  assert.ok(PRESETS.portrait.params.minFeature >= 10, 'portrait merges small facial islands');
 });
 
 test('every preset only references real control ids', () => {
