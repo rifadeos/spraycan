@@ -64,22 +64,27 @@
       </div>
 
       <div class="tool-group tool-actions">
-        <button id="exportSvg" type="button" class="tbtn primary" disabled>Export cut files</button>
-        <button id="exportPdf" type="button" class="tbtn" disabled>Export PDF</button>
+        <div class="menu" id="exportMenu">
+          <button id="exportBtn" type="button" class="tbtn primary" aria-haspopup="true" aria-expanded="false" disabled>Export ▾</button>
+          <div class="menu-pop" role="menu" hidden>
+            <button id="exportSvg" type="button" role="menuitem">Cut files — per-layer SVG (.zip)</button>
+            <button id="exportPdf" type="button" role="menuitem">PDF proof — one page per layer</button>
+          </div>
+        </div>
       </div>
     </div>
   </header>
 
   <main class="app" id="root">
     <aside class="panel">
-      <section class="group">
-        <h2 class="group-head">1 · Image</h2>
+      <details class="group" open>
+        <summary class="group-head">1 · Image</summary>
         <label class="check"><input id="removeBg" data-param type="checkbox" /> Remove background (isolate the subject)</label>
         <p class="hint">Load with <strong>Open image</strong> or <strong>Sample</strong> in the toolbar above. High-contrast subjects (portraits, logos, bold shapes) work best; your image is processed locally and never uploaded. (Remove background downloads a small model the first time.)</p>
-      </section>
+      </details>
 
-      <section class="group">
-        <h2 class="group-head">2 · Adjust</h2>
+      <details class="group" open>
+        <summary class="group-head">2 · Adjust</summary>
         <label class="row">Brightness <span class="out" data-out="brightness">0</span>
           <input id="brightness" data-param type="range" min="-100" max="100" value="0" />
         </label>
@@ -93,10 +98,10 @@
           <input id="detail" data-param type="range" min="0" max="3" value="2" />
         </label>
         <p class="hint">Invert, flip, and auto-contrast are in the toolbar above.</p>
-      </section>
+      </details>
 
-      <section class="group">
-        <h2 class="group-head">3 · Layers</h2>
+      <details class="group" open>
+        <summary class="group-head">3 · Layers</summary>
         <label class="row">Layers / colours <span class="out" data-out="layers">2</span>
           <input id="layers" data-param type="range" min="1" max="6" value="2" />
         </label>
@@ -109,10 +114,10 @@
           <input id="edgeAmount" data-param type="range" min="0" max="100" value="35" />
         </label>
         <p class="hint">Turn on <strong>Edge layer</strong> (toolbar) to add a top layer of strong outlines — a subject’s contour, bold creases — that the tonal layers miss; higher = more lines. <strong>Keep highlights</strong> (toolbar) protects eyes/nose/teeth.</p>
-      </section>
+      </details>
 
-      <section class="group">
-        <h2 class="group-head">4 · Bridges</h2>
+      <details class="group" open>
+        <summary class="group-head">4 · Bridges</summary>
         <label class="row">Material / cut method
           <select id="material" data-param>
             <option value="mylar" selected>Mylar — general (2 mm ties)</option>
@@ -140,10 +145,10 @@
           <summary>What are bridges?</summary>
           <p>A bridge is a thin sliver of material you leave <em>uncut</em>, to hold a “floating” piece in place — like the middle of an <strong>O</strong> or the dot of an <strong>i</strong>. Without it, that piece falls out the moment you finish cutting. SprayCan finds these islands (shown in red) and ties the big ones automatically; you can move, add, or delete each tie. They’re about the physical cut, not the printing.</p>
         </details>
-      </section>
+      </details>
 
-      <section class="group">
-        <h2 class="group-head">5 · Output</h2>
+      <details class="group" open>
+        <summary class="group-head">5 · Output</summary>
         <label class="row">Target width
           <span class="size-input">
             <input id="targetWidth" data-param type="number" min="1" step="1" value="30" />
@@ -186,8 +191,8 @@
           </select>
         </label>
         <p class="hint" id="dims">—</p>
-        <p class="hint"><strong>Export cut files</strong> (per-layer SVG) and <strong>Export PDF</strong> are in the toolbar, top-right.</p>
-      </section>
+        <p class="hint"><strong>Export ▾</strong> (cut files + PDF) is in the toolbar, top-right.</p>
+      </details>
 
       <details class="advanced">
         <summary>Advanced</summary>
@@ -207,28 +212,49 @@
       <div class="btn-row">
         <button id="reset" type="button">Reset to defaults</button>
       </div>
-
-      <div id="status" class="status" role="status">Load an image to begin.</div>
     </aside>
 
     <section class="stage">
-      <div id="guide" class="guide"></div>
-      <div id="colorPanel" class="color-panel"></div>
-      <div class="canvases">
-        <div class="canvas-card">
-          <h2>Editing: <span id="activeLabel">—</span></h2>
+      <div class="canvas-top">
+        <span class="canvas-title">Editing: <span id="activeLabel">—</span></span>
+        <div class="view-toggle" role="group" aria-label="Canvas view">
+          <button id="viewThis" type="button" class="seg active">This layer</button>
+          <button id="viewAll" type="button" class="seg">All layers</button>
+        </div>
+      </div>
+      <div class="canvas-host">
+        <div class="canvas-frame">
           <div class="editor-wrap">
-            <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Load a picture or click “Try a sample image” to start.</p>
+            <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image or click <strong>Sample</strong> to start.</p>
             <canvas id="editor" tabindex="0"></canvas>
           </div>
-        </div>
-        <div class="canvas-card">
-          <h2>Stacked preview</h2>
           <div class="preview-wrap" id="combined"><p class="empty">No image yet.</p></div>
         </div>
       </div>
     </section>
+
+    <aside class="dock">
+      <div class="dock-section">
+        <h2 class="dock-head">Layers</h2>
+        <div id="guide" class="guide"></div>
+      </div>
+      <div class="dock-section dock-props">
+        <h2 class="dock-head">Properties</h2>
+        <div id="colorPanel" class="color-panel"></div>
+        <p class="dock-empty">Select a layer to edit its colour.</p>
+      </div>
+    </aside>
   </main>
+
+  <footer class="statusbar">
+    <div id="status" class="status" role="status">Load an image to begin.</div>
+    <div class="zoombar">
+      <button id="zoomFit" type="button" class="zbtn">Fit</button>
+      <button id="zoomOut" type="button" class="zbtn" aria-label="Zoom out">−</button>
+      <span id="zoomLabel" class="zoom-label">100%</span>
+      <button id="zoomIn" type="button" class="zbtn" aria-label="Zoom in">+</button>
+    </div>
+  </footer>
 
   <script src="vendor/imagetracer.js"></script>
   <script src="vendor/jspdf.umd.min.js"></script>

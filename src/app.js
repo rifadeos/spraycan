@@ -25,9 +25,12 @@ const els = {
   layers: $('layers'), minFeature: $('minFeature'), bridgeWidth: $('bridgeWidth'),
   targetWidth: $('targetWidth'), unit: $('unit'),
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
-  exportSvg: $('exportSvg'), exportPdf: $('exportPdf'),
+  exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), reset: $('reset'),
+  stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
+  viewThis: $('viewThis'), viewAll: $('viewAll'),
+  zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
 };
 
 const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null };
@@ -255,7 +258,26 @@ function updateDims() {
   els.dims.textContent = `True size: ${Math.round(d.widthMm)} × ${Math.round(d.heightMm)} mm (≈ ${inW.toFixed(1)} × ${inH.toFixed(1)} in)  ·  working ${state.gray.width}×${state.gray.height}px`;
 }
 
-function setExportsEnabled(on) { [els.exportSvg, els.exportPdf].forEach(b => { b.disabled = !on; }); }
+function setExportsEnabled(on) { [els.exportSvg, els.exportPdf, els.exportBtn].forEach(b => { if (b) b.disabled = !on; }); }
+
+// Canvas view toggle (This layer / All layers), zoom, and the Export ▾ menu.
+function setView(all) {
+  els.stage.classList.toggle('view-all', all);
+  els.viewAll.classList.toggle('active', all);
+  els.viewThis.classList.toggle('active', !all);
+}
+let zoom = 1;
+function setZoom(z) {
+  zoom = Math.max(0.25, Math.min(4, Math.round(z * 100) / 100));
+  if (els.canvasFrame) els.canvasFrame.style.setProperty('--zoom', zoom);
+  els.zoomLabel.textContent = Math.round(zoom * 100) + '%';
+}
+function toggleExportMenu(open) {
+  const pop = els.exportMenu.querySelector('.menu-pop');
+  const show = (open === undefined) ? pop.hidden : open;
+  pop.hidden = !show;
+  els.exportBtn.setAttribute('aria-expanded', String(show));
+}
 
 function setActive(i) {
   state.active = i;
@@ -532,6 +554,20 @@ function init() {
 
   els.exportSvg.addEventListener('click', exportPerLayer);
   els.exportPdf.addEventListener('click', exportPDF);
+
+  // Canvas view toggle
+  els.viewThis.addEventListener('click', () => setView(false));
+  els.viewAll.addEventListener('click', () => setView(true));
+  // Zoom
+  els.zoomFit.addEventListener('click', () => setZoom(1));
+  els.zoomIn.addEventListener('click', () => setZoom(zoom + 0.25));
+  els.zoomOut.addEventListener('click', () => setZoom(zoom - 0.25));
+  setZoom(1);
+  // Export ▾ menu open/close
+  els.exportBtn.addEventListener('click', e => { e.stopPropagation(); toggleExportMenu(); });
+  document.addEventListener('click', e => { if (!els.exportMenu.contains(e.target)) toggleExportMenu(false); });
+  els.exportSvg.addEventListener('click', () => toggleExportMenu(false));
+  els.exportPdf.addEventListener('click', () => toggleExportMenu(false));
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
