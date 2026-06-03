@@ -29,6 +29,7 @@ const els = {
   exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'),
+  aiBtn: $('aiBtn'), aiKey: $('aiKey'), aiModel: $('aiModel'),
   stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
   srcPreview: $('srcPreview'), srcCard: $('srcCard'), srcUpload: $('srcUpload'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
@@ -83,7 +84,7 @@ function materialInfo() { return MATERIALS[state.params && state.params.material
 // ---- pipeline -------------------------------------------------------------
 function reGray() {
   const p = state.params;
-  const src = (p.removeBg && state.processedImg) ? state.processedImg : state.img;
+  const src = state.processedImg || state.img; // bg-removed or AI-simplified base, else the original
   state.gray = imageToGray(src, {
     maxResolution: p.maxResolution, brightness: p.brightness * 1.2, contrast: p.contrast * 2,
     invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip,
@@ -344,6 +345,37 @@ async function toggleBackground() {
   }
 }
 
+// Optional cloud "AI simplify" via Gemini (user's own key). Toggle on → replace the
+// working source with Gemini's flat stencil render; toggle off → back to original.
+async function toggleAi() {
+  if (!state.img) return;
+  const on = !els.aiBtn.classList.contains('active');
+  if (!on) { // turn off → revert to the original photo
+    els.aiBtn.classList.remove('active');
+    state.processedImg = null; reGray(); recomputeAll();
+    ready('AI simplify off — back to the original image.');
+    return;
+  }
+  const apiKey = (els.aiKey.value || '').trim();
+  if (!apiKey) { fail('Paste your Google AI Studio API key first (open “Gemini API key” below the button).'); els.aiKey.focus(); return; }
+  const my = ++busyToken;
+  busy('AI simplify — sending your image to Gemini…');
+  try {
+    const { aiSimplify } = await import('./ai.js');
+    const out = await aiSimplify(state.img, { apiKey, model: (els.aiModel.value || '').trim() || undefined, layers: state.params.layers });
+    if (my !== busyToken) return;
+    state.processedImg = out;
+    els.aiBtn.classList.add('active');
+    els.removeBg.checked = false; if (state.params) state.params.removeBg = false; syncRemoveBgBtn(); // AI replaces the source; bg-removal would fight it
+    reGray();
+    await recomputeAll();
+    ready('AI-simplified base applied. Tweak the layers or export.');
+  } catch (e) {
+    console.error(e);
+    fail('AI simplify failed: ' + e.message);
+  }
+}
+
 // ---- undo + eyedropper ----------------------------------------------------
 function pushUndo() {
   const L = state.layers[state.active];
@@ -546,6 +578,7 @@ async function exportPDF() {
 async function useImage(img) {
   state.img = img;
   state.processedImg = null;
+  if (els.aiBtn) els.aiBtn.classList.remove('active');   // new image → drop any AI-simplified base
   // Start from a tuned preset (auto-picked per image, or the user's explicit choice)
   // so the upload looks near-finished instead of starting from a generic default.
   await applyPreset(presetForImage(img));
@@ -603,6 +636,17 @@ function init() {
     els.removeBg.dispatchEvent(new Event('change', { bubbles: true }));
   });
   syncRemoveBgBtn();
+
+  // Optional Gemini "AI simplify" — key/model kept only in this browser.
+  if (els.aiKey) {
+    els.aiKey.value = localStorage.getItem('spraycan_gemini_key') || '';
+    els.aiKey.addEventListener('change', () => { try { localStorage.setItem('spraycan_gemini_key', els.aiKey.value.trim()); } catch {} });
+  }
+  if (els.aiModel) {
+    els.aiModel.value = localStorage.getItem('spraycan_gemini_model') || '';
+    els.aiModel.addEventListener('change', () => { try { localStorage.setItem('spraycan_gemini_model', els.aiModel.value.trim()); } catch {} });
+  }
+  els.aiBtn.addEventListener('click', toggleAi);
 
   els.autoBridge.addEventListener('click', () => {
     const layer = state.layers[state.active];
