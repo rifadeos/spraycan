@@ -111,7 +111,7 @@ export class LayerEditor {
         const fs = Math.max(9, Math.min(this.maskW, this.maskH) * 0.032);
         const mx = (b.x1 + b.x2) / 2, my = (b.y1 + b.y2) / 2;
         ctx.save();
-        ctx.font = `600 ${fs}px Inter, system-ui, sans-serif`;
+        ctx.font = `600 ${fs}px "Space Grotesk", system-ui, sans-serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.lineWidth = Math.max(2, fs * 0.24); ctx.strokeStyle = 'rgba(0,0,0,0.85)';
         ctx.strokeText(txt, mx, my - r - fs * 0.35);

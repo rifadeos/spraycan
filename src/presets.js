@@ -38,13 +38,15 @@ export function imageStats(gray, aspect = 1) {
 }
 
 // Fraction of likely skin-tone pixels in the central/upper region of an RGBA
-// buffer (where a face usually sits). Pure: the Kovac et al. uniform-daylight
-// rule. Used to detect portraits so they get fewer layers + protected facial
-// mid-tones instead of fragmenting into "face holes".
+// buffer (where a face usually sits). Uses the YCbCr skin-cluster test, which is
+// far more robust across skin tones and lighting than a raw-RGB rule (it caught
+// well-lit pale faces but missed bearded / shadowed / cooler ones). A brightness
+// floor skips near-black hair/shadow. Used to detect portraits so they get fewer
+// layers + protected facial mid-tones instead of fragmenting into "face holes".
 export function skinFraction(rgba, w, h) {
   if (!rgba || !w || !h) return 0;
   const x0 = Math.floor(w * 0.20), x1 = Math.ceil(w * 0.80);
-  const y0 = Math.floor(h * 0.08), y1 = Math.ceil(h * 0.78);
+  const y0 = Math.floor(h * 0.06), y1 = Math.ceil(h * 0.80);
   let skin = 0, total = 0;
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
@@ -52,8 +54,10 @@ export function skinFraction(rgba, w, h) {
       if (rgba[i + 3] < 16) continue;           // skip transparent (already-isolated) pixels
       const r = rgba[i], g = rgba[i + 1], b = rgba[i + 2];
       total++;
-      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-      if (r > 95 && g > 40 && b > 20 && (mx - mn) > 15 && Math.abs(r - g) > 15 && r > g && r > b) skin++;
+      const Y = 0.299 * r + 0.587 * g + 0.114 * b;
+      const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+      const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+      if (Y > 40 && cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173) skin++;
     }
   }
   return total ? skin / total : 0;
@@ -64,7 +68,7 @@ export function skinFraction(rgba, w, h) {
 // step has a coverage fallback, so a subject-less scene reverts to the full image).
 export function pickPreset(stats) {
   const { std, toneCount, skinFraction: skin = 0 } = stats;
-  if (skin >= 0.15) return 'portrait';             // a face is present → fewer layers, keep skin continuous
+  if (skin >= 0.12) return 'portrait';             // a face is present → fewer layers, keep skin continuous
   if (toneCount <= 6 && std > 55) return 'logo';   // few flat tones + high contrast → graphic/logo (keep whole)
   return 'subject';                                 // it's a photo → isolate the subject (auto, with fallback)
 }

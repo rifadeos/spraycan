@@ -1,15 +1,19 @@
-/* Inter — vendored locally (SIL OFL); keeps the app fully offline. */
+/* Space Grotesk — vendored locally (SIL OFL); keeps the app fully offline. */
 @font-face {
-  font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap;
-  src: url("vendor/fonts/inter-latin-400-normal.woff2") format("woff2");
+  font-family: "Space Grotesk"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("vendor/fonts/space-grotesk-latin-400-normal.woff2") format("woff2");
 }
 @font-face {
-  font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap;
-  src: url("vendor/fonts/inter-latin-500-normal.woff2") format("woff2");
+  font-family: "Space Grotesk"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("vendor/fonts/space-grotesk-latin-500-normal.woff2") format("woff2");
 }
 @font-face {
-  font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap;
-  src: url("vendor/fonts/inter-latin-600-normal.woff2") format("woff2");
+  font-family: "Space Grotesk"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("vendor/fonts/space-grotesk-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk"; font-style: normal; font-weight: 700; font-display: swap;
+  src: url("vendor/fonts/space-grotesk-latin-700-normal.woff2") format("woff2");
 }
 
 :root {
@@ -31,7 +35,7 @@
   --hover: rgba(255,255,255,.05);      /* neutral hover fill */
   --hover-2: rgba(255,255,255,.08);    /* neutral hover fill, stronger */
   --accent-soft: rgba(217,165,40,.16); /* active / selected fill */
-  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 * { box-sizing: border-box; }
