@@ -195,6 +195,20 @@ test('auto-bridge ties the island so it no longer floats', () => {
   assert.equal(findIslands(burned).islands.length, 0, 'island connected after burning');
 });
 
+test('autoBridges: physics-aware mode gives a big island several spread ties', () => {
+  const W = 41, H = 41;
+  const data = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    data[y * W + x] = (x === 0 || y === 0 || x === W - 1 || y === H - 1) ? 0 : 1; // MATERIAL border, OPEN inside
+  }
+  for (let y = 15; y <= 25; y++) for (let x = 15; x <= 25; x++) data[y * W + x] = 0; // central island
+  const mask = { width: W, height: H, data };
+  const single = autoBridges(mask, { widthPx: 2 });                                  // legacy: one tie
+  const multi = autoBridges(mask, { widthPx: 2, mmPerPx: 2, tieSpacingMm: 6 });      // physics: span 20mm
+  assert.equal(single.length, 1);
+  assert.ok(multi.length >= 2, `expected >=2 spread ties, got ${multi.length}`);
+});
+
 test('autoLevels stretches the tonal range to 0..255', () => {
   const g = gray([[50, 100, 150, 200]]);
   const r = autoLevels(g, 0.5, 99.5);

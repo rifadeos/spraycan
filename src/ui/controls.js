@@ -13,9 +13,7 @@ export function readParams(root) {
     targetWidth: +g('targetWidth').value,
     unit: g('unit').value,
     pageSize: g('pageSize').value,
-    pdfMode: g('pdfMode').value,          // 'sheet' (one layer/page) | 'tiled'
-    margin: +g('margin').value,           // mm (PDF)
-    overlap: +g('overlap').value,         // mm (PDF tiling)
+    margin: +g('margin').value,           // mm (PDF page border)
     brightness: +g('brightness').value,
     contrast: +g('contrast').value,
     invert: g('invert').checked,

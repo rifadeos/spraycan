@@ -99,18 +99,8 @@ function scaleBar(pdf, x, y, mm) {
   pdf.text(`Print at 100% — this bar must measure ${mm} mm (${mm / 10} cm).`, x, y + 5);
 }
 
-function assemblyGrid(pdf, x, y, cols, rows, cell) {
-  pdf.setDrawColor(120); pdf.setLineWidth(0.3);
-  pdf.setFontSize(7); pdf.setTextColor(90);
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    const cx = x + c * cell, cy = y + r * cell;
-    pdf.rect(cx, cy, cell, cell);
-    pdf.text(`${c + 1},${r + 1}`, cx + cell / 2, cy + cell / 2 + 1.5, { align: 'center' });
-  }
-}
-
 async function coverPage(pdf, info) {
-  const { margin, designW, designH, layers, colors, colorLabels, cols, rows, pageLabel, marks } = info;
+  const { margin, designW, designH, layers, colors, colorLabels, pageLabel, marks } = info;
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
   const lineW = pageW - 2 * margin;
@@ -118,8 +108,7 @@ async function coverPage(pdf, info) {
 
   pdf.setTextColor(20); pdf.setFontSize(18); pdf.text('SprayCan — cut & spray kit', margin, y); y += 8;
   pdf.setFontSize(10); pdf.setTextColor(90);
-  const perLayer = (cols * rows > 1) ? `${cols}×${rows} pages per layer (tiled)` : 'one page per layer';
-  pdf.text(`Final size ${Math.round(designW)} × ${Math.round(designH)} mm · ${layers.length} layer(s) · ${pageLabel} · ${perLayer}`, margin, y);
+  pdf.text(`True size ${Math.round(designW)} × ${Math.round(designH)} mm · ${layers.length} layer(s) · one page per layer · cover: ${pageLabel}`, margin, y);
   y += 9;
 
   // Stacked-result preview (top-right)
@@ -148,70 +137,22 @@ async function coverPage(pdf, info) {
   });
   y = Math.max(y, margin + 21 + ph) + 6;
 
-  if (cols * rows > 1) {
-    pdf.setTextColor(20); pdf.setFontSize(11); pdf.text('Assembly — trim, overlap & tape pages per layer:', margin, y); y += 5;
-    const cell = Math.min(11, Math.max(8, lineW / Math.max(cols, 1)));
-    assemblyGrid(pdf, margin, y, cols, rows, cell);
-    y += rows * cell + 7;
-  }
-
   if (y > pageH - 72) { pdf.addPage(); y = margin + 4; }
   pdf.setTextColor(20); pdf.setFontSize(12); pdf.text('Cut & spray', margin, y); y += 6;
   pdf.setFontSize(9.5); pdf.setTextColor(70);
   const steps = [
-    'Print every page at 100% (Actual size — no "fit to page"); check the ruler below.',
-    'Trim tiles to the grey crop marks, then overlap and tape the tiles of the SAME layer.',
-    'Cut away the coloured (sprayed) areas; KEEP everything else and the small bridges/ties.',
-    'Tape the stencil flat and press the edges down so paint cannot creep underneath.',
+    'Each following page is ONE layer at its true size — cut these, or send the SVG cut files to your shop.',
+    'On each sheet, cut away the coloured (sprayed) areas; KEEP everything else and the small bridges/ties.',
+    'Tape the stencil flat to the surface and press the edges so paint cannot creep underneath.',
     'Spray light, even coats from ~15 cm, held at 90°; let each layer dry before the next.',
-    'Line layers up with the red registration marks; spray the lightest layer first.',
+    'Line the layers up with the red registration marks; spray the lightest layer first, darkest last.',
   ];
   steps.forEach((s, i) => { const lines = pdf.splitTextToSize(`${i + 1}. ${s}`, lineW); pdf.text(lines, margin, y); y += 4.7 * lines.length; });
   y += 5;
   scaleBar(pdf, margin, y + 2, 100);
 }
 
-export async function exportTiledPDF(layers, colors, dims, opts = {}) {
-  if (!window.jspdf) throw new Error('jsPDF not loaded');
-  const { jsPDF } = window.jspdf;
-  const pageKey = PAGES[opts.pageSize] ? opts.pageSize : 'a4';
-  const [pageW, pageH] = PAGES[pageKey];
-  const margin = Math.max(3, opts.margin ?? 10);
-  const overlap = Math.max(0, opts.overlap ?? 8);
-  const printW = pageW - 2 * margin, printH = pageH - 2 * margin;
-  const designW = dims.widthMm, designH = dims.heightMm;
-  const pxPerMm = layers[0].traced.width / designW;
-
-  const stepW = Math.max(1, printW - overlap), stepH = Math.max(1, printH - overlap);
-  const cols = designW <= printW ? 1 : Math.ceil((designW - overlap) / stepW);
-  const rows = designH <= printH ? 1 : Math.ceil((designH - overlap) / stepH);
-
-  const pdf = new jsPDF({ unit: 'mm', format: [pageW, pageH], orientation: 'portrait' });
-  await coverPage(pdf, {
-    margin, designW, designH, layers, colors, colorLabels: opts.colorLabels || [],
-    cols, rows, pageLabel: PAGE_LABELS[pageKey] || pageKey, marks: opts.marks || [],
-  });
-
-  for (let li = 0; li < layers.length; li++) {
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        pdf.addPage();
-        const tileXmm = c * stepW, tileYmm = r * stepH;
-        const tileWmm = Math.min(printW, designW - tileXmm);
-        const tileHmm = Math.min(printH, designH - tileYmm);
-        const vb = { x: tileXmm * pxPerMm, y: tileYmm * pxPerMm, w: tileWmm * pxPerMm, h: tileHmm * pxPerMm };
-        const el = tileSVGElement(layers[li].traced, colors[li] || '#111111', opts.marks || [], vb);
-        await renderSVG(pdf, el, { x: margin, y: margin, width: tileWmm, height: tileHmm });
-        cropMarks(pdf, margin, margin, tileWmm, tileHmm);
-        pdf.setFontSize(8); pdf.setTextColor(120);
-        pdf.text(`Layer ${li + 1} (spray ${li + 1}/${layers.length}) — page ${c + 1},${r + 1} of ${cols}×${rows}`, margin, margin - 3);
-      }
-    }
-  }
-  return pdf;
-}
-
-// "Sheet" mode: a proof cover, then ONE page per layer. Each layer page is sized
+// A proof cover, then ONE page per layer. Each layer page is sized
 // to the design's true mm (prints 1:1) when it fits within A0; oversized designs
 // are scaled onto the selected page with a ruler + true-size label. This is the
 // format to hand a print/cut shop.
@@ -229,7 +170,7 @@ export async function exportSheetPDF(layers, colors, dims, opts = {}) {
   const pdf = new jsPDF({ unit: 'mm', format: [coverW, coverH], orientation: coverW > coverH ? 'landscape' : 'portrait' });
   await coverPage(pdf, {
     margin, designW, designH, layers, colors, colorLabels,
-    cols: 1, rows: 1, pageLabel: PAGE_LABELS[pageKey] || pageKey, marks,
+    pageLabel: PAGE_LABELS[pageKey] || pageKey, marks,
   });
 
   for (let li = 0; li < layers.length; li++) {
@@ -252,9 +193,7 @@ export async function exportSheetPDF(layers, colors, dims, opts = {}) {
   return pdf;
 }
 
-// Dispatcher: choose the layout. Default 'sheet' (one layer per page).
+// Public entry: a proof cover + one page per layer at true size.
 export async function exportPDF(layers, colors, dims, opts = {}) {
-  return (opts.pdfMode === 'tiled')
-    ? exportTiledPDF(layers, colors, dims, opts)
-    : exportSheetPDF(layers, colors, dims, opts);
+  return exportSheetPDF(layers, colors, dims, opts);
 }

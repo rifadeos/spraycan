@@ -28,17 +28,22 @@ python3 -m http.server 8000      # then open http://localhost:8000
 # or:  npx serve .
 ```
 
-Click **Try a sample image** to see it work immediately, or load your own.
+Click **Sample** in the toolbar to see it work immediately, or **Open image** to load your own.
 
 ## How to use
 
-1. **Image** — load a picture (high-contrast subjects work best).
-2. **Adjust** — brightness / contrast / invert until the shapes read clearly.
-3. **Layers** — pick 1–4. Each layer is one spray colour; tune the per-tone sliders.
-4. **Bridges** — red areas are islands that would fall out. They're auto-tied; drag the green
-   handles to fine-tune, click **+ Add** to draw a tie, select one and **Delete** to remove it.
-5. **Output** — set the real-world width, pick a **PDF layout** (one-layer-per-page or tiled), then
-   **Export cut files (.zip)** or **Export PDF**.
+The **toolbar** (top) holds the actions and image tools: Open image / Sample, the transform toggles
+(invert, flip H/V, auto-contrast, keep-highlights, edge layer), and the two Export buttons. The
+**left panel** holds the adjustment sliders, grouped into numbered sections.
+
+1. **Image** — Open image or Sample (toolbar). Optionally toggle Remove background.
+2. **Adjust** — brightness / contrast / smooth / line-detail sliders; invert / flip / auto-contrast from the toolbar.
+3. **Layers** — pick 1–6. Each layer is one spray colour; tune the per-tone sliders.
+4. **Bridges** — every floating island is **auto-tied** with enough physics-aware ties (count + width
+   from the chosen material and the real print size) to hold. You can still drag the green handles,
+   **+ Add** a tie, or **Delete** one.
+5. **Output** — set the real-world width and page size, then **Export cut files** (per-layer SVG, .zip)
+   or **Export PDF** (a proof cover + one page per layer at true size) from the toolbar.
 
 For a multi-layer piece: cut each layer sheet, keep the bridges, align the sheets with the red
 crosshairs, and spray the **lightest layer first**, each darker layer on top.

@@ -21,7 +21,7 @@ import { LayerEditor } from './ui/editor.js';
 
 const $ = id => document.getElementById(id);
 const els = {
-  root: $('root'), file: $('file'), sample: $('sample'), thresholds: $('thresholds'),
+  root: document.body, file: $('file'), sample: $('sample'), open: $('open'), thresholds: $('thresholds'),
   layers: $('layers'), minFeature: $('minFeature'), bridgeWidth: $('bridgeWidth'),
   targetWidth: $('targetWidth'), unit: $('unit'),
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
@@ -67,10 +67,12 @@ function nearestCanLabel(hex) { const n = findNearestPaint(hex); return n ? `${n
 // Material / cut-method presets: default bridge width + the thinnest feature the
 // material can hold (mm), used to warn when a bridge would be too fragile.
 const MATERIALS = {
-  mylar: { bridge: 2.0, minFeatureMm: 0.6 },
-  vinyl: { bridge: 2.0, minFeatureMm: 1.0 },
-  card: { bridge: 3.0, minFeatureMm: 1.5 },
-  laser: { bridge: 1.2, minFeatureMm: 0.3 },
+  // tieSpacing = anchor a tie roughly every N mm of an island's span; flimsier
+  // materials (card) get more ties, stiffer/precise ones (laser) fewer.
+  mylar: { bridge: 2.0, minFeatureMm: 0.6, tieSpacing: 50 },
+  vinyl: { bridge: 2.0, minFeatureMm: 1.0, tieSpacing: 50 },
+  card: { bridge: 3.0, minFeatureMm: 1.5, tieSpacing: 35 },
+  laser: { bridge: 1.2, minFeatureMm: 0.3, tieSpacing: 60 },
 };
 function materialInfo() { return MATERIALS[state.params && state.params.material] || MATERIALS.mylar; }
 
@@ -150,7 +152,7 @@ async function recomputeAll() {
       const cleaned = minArea > 1 ? despeckle(built[i].mask, minArea) : built[i].mask;
       const framed = frameBorder(cleaned, border);
       // Smart bridging: fill tiny islands, tie only the meaningful (capped) ones.
-      const { mask: baseMask, bridges } = prepareIslands(framed, { widthPx: bw, minIslandArea, maxBridges, brightMask, keepHighlights: p.keepHighlights });
+      const { mask: baseMask, bridges } = prepareIslands(framed, { widthPx: bw, minIslandArea, maxBridges, brightMask, keepHighlights: p.keepHighlights, mmPerPx: mmPerPx(), tieSpacingMm: materialInfo().tieSpacing });
       const layer = { order: i, threshold: built[i].threshold, baseMask, bridges, workMask: null, floatingMask: null, traced: null };
       reburn(layer);
       retrace(layer);
@@ -193,7 +195,10 @@ async function recomputeAll() {
       els.status.textContent = 'Heads-up: bridges are very thin at this output size — raise the bridge width or target size.';
       els.status.className = 'status busy';
     } else {
-      ready('Ready — adjust, fix bridges, then export.');
+      const ties = state.layers.reduce((n, L) => n + (L.isEdge ? 0 : L.bridges.length), 0);
+      ready(ties
+        ? `Ready — auto-placed ${ties} tie(s) sized for ${state.params.material} to hold every island. Adjust or export.`
+        : 'Ready — no islands to tie. Adjust or export.');
     }
   } catch (err) {
     console.error(err);
@@ -455,7 +460,7 @@ async function exportPDF() {
   if (!state.layers.length) return;
   busy('Building PDF (this can take a moment)…'); await raf();
   try {
-    const pdf = await buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, pdfMode: state.params.pdfMode, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin, overlap: state.params.overlap });
+    const pdf = await buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin });
     pdf.save('stencil.pdf');
     ready('PDF exported.');
   } catch (e) { console.error(e); fail('PDF export failed: ' + e.message); }
@@ -505,13 +510,14 @@ function init() {
     catch (err) { fail('Could not load image: ' + err.message); }
   });
   els.sample.addEventListener('click', loadSample);
+  els.open.addEventListener('click', () => els.file.click());
   els.reset.addEventListener('click', resetToDefaults);
 
   els.autoBridge.addEventListener('click', () => {
     const layer = state.layers[state.active];
     if (!layer) return;
     pushUndo();
-    const nb = autoBridges(layer.baseMask, { widthPx: bridgeWidthPx() });
+    const nb = autoBridges(layer.baseMask, { widthPx: bridgeWidthPx(), mmPerPx: mmPerPx(), tieSpacingMm: materialInfo().tieSpacing });
     layer.bridges.length = 0; layer.bridges.push(...nb);
     reburn(layer); retrace(layer);
     editor.setLayer(edData(layer)); updateCombined();
@@ -544,5 +550,5 @@ window.__sf = {
   get state() { return state; },
   get editor() { return editor; },
   bridgeWidthPx,
-  buildPDF: (mode) => buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, pdfMode: mode || state.params.pdfMode, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin, overlap: state.params.overlap }),
+  buildPDF: () => buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin }),
 };

@@ -5,13 +5,20 @@
 import { cloneMask } from './grid.js';
 import { findIslands } from './islands.js';
 
-// For every floating island, place one tie along the shortest OPEN gap to the
-// main (border-connected) material. Returns an array of bridges.
+// Tie every floating island back to the main (border-connected) material.
+// With `mmPerPx` set, bridging is PHYSICS-AWARE: the number of ties scales with
+// the island's real-world span (anchored roughly every `tieSpacingMm`), so a big
+// island gets several evenly-spread ties and can't pivot, sag, or tear — instead
+// of dangling from a single point. Without `mmPerPx` it falls back to one tie.
 export function autoBridges(mask, opts = {}) {
   const widthPx = opts.widthPx ?? 4;
   // Bound the search so each tie is cheap to find (a real bridge is short).
   const maxGap = opts.maxGap ?? Math.max(40, Math.round(Math.min(mask.width, mask.height) * 0.3));
+  const mmPerPx = opts.mmPerPx ?? null;
+  const tieSpacingMm = opts.tieSpacingMm ?? 50;
+  const maxTiesPerIsland = opts.maxTiesPerIsland ?? 8;
   const { reached, labels } = findIslands(mask);
+  const W = mask.width;
 
   const islandPixels = new Map(); // label -> pixel indices
   for (let i = 0; i < labels.length; i++) {
@@ -24,8 +31,19 @@ export function autoBridges(mask, opts = {}) {
 
   const bridges = [];
   for (const pixels of islandPixels.values()) {
-    const tie = shortestTie(mask, reached, pixels, maxGap);
-    if (tie) bridges.push({ ...tie, width: widthPx });
+    if (!mmPerPx) { // legacy: a single shortest tie
+      const tie = shortestTie(mask, reached, pixels, maxGap);
+      if (tie) bridges.push({ ...tie, width: widthPx });
+      continue;
+    }
+    // How many ties does this island physically need at the real print size?
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, sx = 0, sy = 0;
+    for (const p of pixels) { const x = p % W, y = (p - x) / W; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; sx += x; sy += y; }
+    const spanMm = Math.max(maxX - minX, maxY - minY) * mmPerPx;
+    const minTies = spanMm < 12 ? 1 : 2; // tiny → 1; else ≥2 so it can't rotate
+    const count = Math.max(minTies, Math.min(maxTiesPerIsland, Math.round(spanMm / tieSpacingMm) || 1));
+    const ties = multiTie(mask, reached, pixels, { count, maxGap, cx: sx / pixels.length, cy: sy / pixels.length });
+    for (const t of ties) bridges.push({ ...t, width: widthPx });
   }
   return bridges;
 }
@@ -70,6 +88,49 @@ function shortestTie(mask, reached, islandPixels, maxGap) {
   return null;
 }
 
+// Multi-source BFS from an island's surrounding OPEN pixels; keep the shortest
+// tie to main material within each of `count` angular sectors around the island
+// centroid, so the ties are spread around it rather than clustered at one edge.
+function multiTie(mask, reached, islandPixels, { count, maxGap, cx, cy }) {
+  const { width: W, height: H, data } = mask;
+  const N = W * H;
+  const dist = new Int32Array(N).fill(-1);
+  const origin = new Int32Array(N).fill(-1);
+  const queue = [];
+  for (const p of islandPixels) {
+    const x = p % W, y = (p - x) / W;
+    for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const q = ny * W + nx;
+      if (data[q] === 1 && dist[q] === -1) { dist[q] = 1; origin[q] = p; queue.push(q); }
+    }
+  }
+  const sectors = new Map(); // sector index -> { dist, tie }
+  const TWO_PI = Math.PI * 2;
+  let head = 0;
+  while (head < queue.length) {
+    const p = queue[head++];
+    if (dist[p] > maxGap) continue;
+    const x = p % W, y = (p - x) / W;
+    for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const q = ny * W + nx;
+      if (data[q] === 1) {
+        if (dist[q] === -1) { dist[q] = dist[p] + 1; origin[q] = origin[p]; queue.push(q); }
+      } else if (data[q] === 0 && reached[q]) {
+        const isl = origin[p], ix = isl % W, iy = (isl - ix) / W;
+        const ang = Math.atan2(iy - cy, ix - cx);
+        const sec = Math.min(count - 1, Math.floor(((ang + Math.PI) / TWO_PI) * count));
+        const cur = sectors.get(sec);
+        if (!cur || dist[p] < cur.dist) sectors.set(sec, { dist: dist[p], tie: { x1: ix, y1: iy, x2: nx, y2: ny } });
+      }
+    }
+  }
+  const ties = [...sectors.values()].map(s => s.tie);
+  if (!ties.length) { const t = shortestTie(mask, reached, islandPixels, maxGap); if (t) ties.push(t); }
+  return ties;
+}
+
 // Smart island handling. Fill (spray solid) every island that is smaller than
 // minIslandArea, plus any beyond the maxBridges cap, then auto-bridge only the
 // kept (largest) islands. This stops detailed photos from spawning hundreds of
@@ -80,6 +141,9 @@ export function prepareIslands(mask, opts = {}) {
   const maxBridges = opts.maxBridges ?? 24;
   const brightMask = opts.brightMask || null;
   const keepHighlights = opts.keepHighlights && brightMask;
+  const mmPerPx = opts.mmPerPx ?? null;
+  const tieSpacingMm = opts.tieSpacingMm ?? 50;
+  const maxTiesPerIsland = opts.maxTiesPerIsland ?? 8;
   const { labels, islands } = findIslands(mask);
 
   const ranked = islands.slice().sort((a, b) => b.size - a.size);
@@ -114,7 +178,16 @@ export function prepareIslands(mask, opts = {}) {
     if (l > 0 && !keep.has(l)) out.data[i] = 1; // fill: spray it solid
   }
 
-  const bridges = keep.size ? autoBridges(out, { widthPx }) : [];
+  const bridges = keep.size ? autoBridges(out, { widthPx, mmPerPx, tieSpacingMm, maxTiesPerIsland }) : [];
+  // Guarantee no floaters: if any kept island couldn't be tied (e.g. it's deeper
+  // than maxGap from any material), fill it so nothing can fall out when cut.
+  if (bridges.length) {
+    const { labels: l2, islands: i2 } = findIslands(burnBridges(out, bridges));
+    if (i2.length) {
+      const floating = new Set(i2.map(isl => isl.label));
+      for (let i = 0; i < l2.length; i++) { if (floating.has(l2[i])) out.data[i] = 1; }
+    }
+  }
   return { mask: out, bridges, kept: keep.size, filled: islands.length - keep.size };
 }
 
