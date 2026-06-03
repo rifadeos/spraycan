@@ -30,7 +30,6 @@ const els = {
   exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'),
-  aiBtn: $('aiBtn'), aiKey: $('aiKey'), aiModel: $('aiModel'),
   stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
   srcPreview: $('srcPreview'), srcCard: $('srcCard'), srcUpload: $('srcUpload'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
@@ -150,12 +149,12 @@ async function recomputeAll() {
     busy('Building layers…'); await raf();
     const p = state.params;
     const minArea = p.minFeature * p.minFeature;          // despeckle: drop tiny specks
-    const minIslandArea = Math.max(64, (p.minFeature * 4) ** 2); // fill islands below this instead of bridging
+    // Fill islands smaller than this instead of bridging. Portraits fill much larger
+    // ones so facial highlights merge into the face (far fewer "holes" + ties).
+    const islandSpan = state.presetId === 'portrait' ? 7 : 4;
+    const minIslandArea = Math.max(64, (p.minFeature * islandSpan) ** 2);
     const maxBridges = p.bridgeMode === 'none' ? 0 : 16;  // None = fill every island (no ties)
-    // Portraits protect facial mid-tones (low threshold) so a face stays one
-    // continuous shape; other images only protect true highlights.
-    const brightThresh = state.presetId === 'portrait' ? 165 : 210;
-    const brightMask = p.keepHighlights ? buildBrightMask(state.gray, brightThresh) : null;
+    const brightMask = p.keepHighlights ? buildBrightMask(state.gray) : null;
     const bw = bridgeWidthPx();
     // Thin material holding frame — keeps the sheet connected at the edges so
     // islands can always be bridged, and matches a real stencil's border.
@@ -261,7 +260,9 @@ function refreshUI() {
   updateDims();
   renderSource();
   setExportsEnabled(state.layers.length > 0);
-  els.editorEmpty.style.display = state.layers.length ? 'none' : 'block';
+  const hasLayers = state.layers.length > 0;
+  els.editorEmpty.style.display = hasLayers ? 'none' : 'block';
+  els.editor.style.display = hasLayers ? '' : 'none'; // hide the empty 300×150 canvas so the placeholder centres
 }
 
 function updateCombined() {
@@ -376,37 +377,6 @@ async function toggleBackground() {
     // Still give the user a stencil from the full image rather than nothing.
     try { reGray(); await recomputeAll(); } catch { /* leave whatever's there */ }
     fail('Background removal failed (needs internet to fetch the model) — using the full image.');
-  }
-}
-
-// Optional cloud "AI simplify" via Gemini (user's own key). Toggle on → replace the
-// working source with Gemini's flat stencil render; toggle off → back to original.
-async function toggleAi() {
-  if (!state.img) return;
-  const on = !els.aiBtn.classList.contains('active');
-  if (!on) { // turn off → revert to the original photo
-    els.aiBtn.classList.remove('active');
-    state.processedImg = null; reGray(); recomputeAll();
-    ready('AI simplify off — back to the original image.');
-    return;
-  }
-  const apiKey = (els.aiKey.value || '').trim();
-  if (!apiKey) { fail('Paste your Google AI Studio API key first (open “Gemini API key” below the button).'); els.aiKey.focus(); return; }
-  const my = ++busyToken;
-  busy('AI simplify — sending your image to Gemini…');
-  try {
-    const { aiSimplify } = await import('./ai.js');
-    const out = await aiSimplify(state.img, { apiKey, model: (els.aiModel.value || '').trim() || undefined, layers: state.params.layers });
-    if (my !== busyToken) return;
-    state.processedImg = out;
-    els.aiBtn.classList.add('active');
-    els.removeBg.checked = false; if (state.params) state.params.removeBg = false; syncRemoveBgBtn(); // AI replaces the source; bg-removal would fight it
-    reGray();
-    await recomputeAll();
-    ready('AI-simplified base applied. Tweak the layers or export.');
-  } catch (e) {
-    console.error(e);
-    fail('AI simplify failed: ' + e.message);
   }
 }
 
@@ -665,7 +635,6 @@ async function useImage(img) {
   state.processedImg = null;
   state.active = 0;                          // new image → start at the first layer
   state.colors = []; state.colorNames = [];  // …and fresh default colours (don't carry the last image's)
-  if (els.aiBtn) els.aiBtn.classList.remove('active');   // new image → drop any AI-simplified base
   // Start from a tuned preset (auto-picked per image, or the user's explicit choice)
   // so the upload looks near-finished instead of starting from a generic default.
   await applyPreset(presetForImage(img));
@@ -692,17 +661,12 @@ function init() {
   reflectValues(els.root);
   captureDefaults();
   setExportsEnabled(false);
+  els.editor.style.display = 'none';   // no image yet → keep the empty placeholder centred
   bindControls(els.root, { onInput, onChange });
   els.root.querySelectorAll('input[type=range][data-param]').forEach(addSteppers);
   // Clicking a section "?" shows its tooltip but must not collapse the section.
   els.root.querySelectorAll('.help').forEach(h => h.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }));
-  // Single-open accordion: expanding a section collapses the others (less scrolling).
-  els.root.querySelectorAll('details.group').forEach(d => {
-    d.addEventListener('toggle', () => {
-      if (!d.open) return;
-      els.root.querySelectorAll('details.group[open]').forEach(o => { if (o !== d) o.open = false; });
-    });
-  });
+  // Sections are independent: start closed, open as many as you like.
   buildColorPanel(els.colorPanel, { palettes: PALETTES, onPick: (hex, name) => setColor(state.active, hex, name), onPickFromImage: startEyedrop });
 
   els.file.addEventListener('change', async e => {
@@ -723,17 +687,6 @@ function init() {
     els.removeBg.dispatchEvent(new Event('change', { bubbles: true }));
   });
   syncRemoveBgBtn();
-
-  // Optional Gemini "AI simplify" — key/model kept only in this browser.
-  if (els.aiKey) {
-    els.aiKey.value = localStorage.getItem('spraycan_gemini_key') || '';
-    els.aiKey.addEventListener('change', () => { try { localStorage.setItem('spraycan_gemini_key', els.aiKey.value.trim()); } catch {} });
-  }
-  if (els.aiModel) {
-    els.aiModel.value = localStorage.getItem('spraycan_gemini_model') || '';
-    els.aiModel.addEventListener('change', () => { try { localStorage.setItem('spraycan_gemini_model', els.aiModel.value.trim()); } catch {} });
-  }
-  els.aiBtn.addEventListener('click', toggleAi);
 
   els.autoBridge.addEventListener('click', () => {
     const layer = state.layers[state.active];

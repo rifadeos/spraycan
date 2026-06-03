@@ -168,7 +168,8 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 1px solid rgba(0,0,0,.4); cursor: pointer; }
 input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 /* − / + steppers around each slider */
-.range-wrap { order: 2; flex: 1 1 auto; min-width: 90px; display: flex; align-items: center; gap: 6px; margin: 0; }
+.range-wrap { flex: 1 1 auto; min-width: 90px; display: flex; align-items: center; gap: 6px; margin: 0; }
+.row > .range-wrap { order: 2; } /* control after label (value .out is order:3) — ONLY in flex rows, not the .trow grid */
 .range-wrap input[type=range] { margin: 0; }
 .step { flex: 0 0 auto; width: 24px; height: 24px; padding: 0; font-size: 13px; line-height: 1; border-radius: var(--r); color: var(--muted); }
 .step:hover { color: var(--ink); background: var(--hover-2); }

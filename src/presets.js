@@ -6,12 +6,15 @@
 // Values are control ids that exist in index.html (data-param). Look leans
 // cleaner/bolder: stronger smoothing + higher minFeature → fewer tiny pieces.
 
+// Auto-contrast (CLAHE) and Keep-highlights are OFF by default in every preset —
+// the user opts into them per image. Keeping highlight-protection off also stops
+// facial highlights from being preserved as little islands ("face holes").
 export const PRESETS = {
-  photo:    { label: 'Photo',            params: { contrast: 10, smooth: 3, detail: 2, layers: 6, minFeature: 9,  autoLevels: true,  keepHighlights: true,  edges: false, removeBg: false } },
-  portrait: { label: 'Portrait',         params: { contrast: 12, smooth: 3, detail: 2, layers: 4, minFeature: 11, autoLevels: true,  keepHighlights: true,  edges: false, removeBg: true } },
-  subject:  { label: 'Subject (isolate)', params: { contrast: 14, smooth: 3, detail: 2, layers: 6, minFeature: 8,  autoLevels: true,  keepHighlights: true,  edges: false, removeBg: true } },
-  poster:   { label: 'Bold poster',      params: { contrast: 35, smooth: 3, detail: 1, layers: 2, minFeature: 14, autoLevels: true,  keepHighlights: false, edges: false, removeBg: false } },
-  lineart:  { label: 'Line art',         params: { contrast: 12, smooth: 1, detail: 2, layers: 1, minFeature: 6,  autoLevels: true,  keepHighlights: false, edges: true,  edgeAmount: 55, removeBg: false } },
+  photo:    { label: 'Photo',            params: { contrast: 10, smooth: 3, detail: 2, layers: 6, minFeature: 9,  autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
+  portrait: { label: 'Portrait',         params: { contrast: 12, smooth: 3, detail: 2, layers: 4, minFeature: 12, autoLevels: false, keepHighlights: false, edges: false, removeBg: true } },
+  subject:  { label: 'Subject (isolate)', params: { contrast: 14, smooth: 3, detail: 2, layers: 6, minFeature: 8,  autoLevels: false, keepHighlights: false, edges: false, removeBg: true } },
+  poster:   { label: 'Bold poster',      params: { contrast: 35, smooth: 3, detail: 1, layers: 2, minFeature: 14, autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
+  lineart:  { label: 'Line art',         params: { contrast: 12, smooth: 1, detail: 2, layers: 1, minFeature: 6,  autoLevels: false, keepHighlights: false, edges: true,  edgeAmount: 55, removeBg: false } },
   logo:     { label: 'Logo (B&W)',       params: { contrast: 45, smooth: 3, detail: 1, layers: 1, minFeature: 16, autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
 };
 

@@ -36,7 +36,7 @@
           <span class="vh">Invert</span>
         </label>
         <label class="icon-toggle" data-tip="Auto-contrast — spread tones so flat photos separate into layers">
-          <input id="autoLevels" data-param type="checkbox" checked />
+          <input id="autoLevels" data-param type="checkbox" />
           <svg class="icn" viewBox="0 0 20 20" aria-hidden="true"><rect x="3" y="11" width="3" height="6" fill="currentColor"/><rect x="8.5" y="7" width="3" height="10" fill="currentColor"/><rect x="14" y="4" width="3" height="13" fill="currentColor"/></svg>
           <span class="vh">Auto-contrast</span>
         </label>
@@ -52,7 +52,7 @@
         </label>
         <span class="tool-sep"></span>
         <label class="icon-toggle" data-tip="Keep highlights — protect eyes, nose, teeth">
-          <input id="keepHighlights" data-param type="checkbox" checked />
+          <input id="keepHighlights" data-param type="checkbox" />
           <svg class="icn" viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5 8-5 8 5 8 5-3 5-8 5-8-5-8-5z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="2.4" fill="currentColor"/></svg>
           <span class="vh">Keep highlights</span>
         </label>
@@ -77,7 +77,7 @@
 
   <main class="app" id="root">
     <aside class="panel">
-      <details class="group" open>
+      <details class="group">
         <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto picks the best fit per image; switch it or tweak the sliders from there. The core conversion runs locally; the optional Remove background and AI simplify use the internet.">?</span></summary>
         <label class="row">Preset
           <select id="preset" data-param>
@@ -92,13 +92,6 @@
         </label>
         <button id="removeBgBtn" type="button" class="toggle-btn" aria-pressed="false" title="Isolates the subject with an in-browser model. First use downloads it (needs internet); after that it runs on your device.">Remove background</button>
         <input id="removeBg" data-param type="checkbox" class="vh" />
-        <button id="aiBtn" type="button" class="toggle-btn" title="Optional: redraws your image as a flat stencil using Google Gemini. Sends the image to Google and needs your own API key.">✨ AI simplify (Gemini)</button>
-        <details class="explain">
-          <summary>Gemini API key (optional)</summary>
-          <input id="aiKey" type="password" class="ai-field" placeholder="Google AI Studio API key" autocomplete="off" />
-          <input id="aiModel" type="text" class="ai-field" placeholder="model — default gemini-2.5-flash-image" autocomplete="off" />
-          <p class="hint">Optional cloud step — your image is sent to Google and may be slightly redrawn. Free key at aistudio.google.com; it’s stored only in this browser.</p>
-        </details>
       </details>
 
       <details class="group">
