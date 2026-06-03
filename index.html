@@ -95,7 +95,7 @@
       </details>
 
       <details class="group">
-        <summary class="group-head">2 · Adjust <span class="help" tabindex="0" role="img" aria-label="Adjust help" data-tip="Tune brightness, contrast, smoothing and line detail until the shapes read clearly. Invert, flip and auto-contrast live in the toolbar above.">?</span></summary>
+        <summary class="group-head">2 · Adjust <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Adjust section">↺</button><span class="help" tabindex="0" role="img" aria-label="Adjust help" data-tip="Tune brightness, contrast, smoothing and line detail until the shapes read clearly. Invert, flip and auto-contrast live in the toolbar above.">?</span></summary>
         <label class="row">Brightness <span class="out" data-out="brightness">0</span>
           <input id="brightness" data-param type="range" min="-100" max="100" value="0" />
         </label>
@@ -111,7 +111,7 @@
       </details>
 
       <details class="group">
-        <summary class="group-head">3 · Layers <span class="help" tabindex="0" role="img" aria-label="Layers help" data-tip="Each layer is one spray colour, light → dark. Simplify drops tiny specks and fills small islands so you get a few clean bridges instead of hundreds. Outline strength drives the optional Edge layer (toolbar). Keep highlights (toolbar) protects eyes/nose/teeth.">?</span></summary>
+        <summary class="group-head">3 · Layers <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Layers section">↺</button><span class="help" tabindex="0" role="img" aria-label="Layers help" data-tip="Each layer is one spray colour, light → dark. Simplify drops tiny specks and fills small islands so you get a few clean bridges instead of hundreds. Outline strength drives the optional Edge layer (toolbar). Keep highlights (toolbar) protects eyes/nose/teeth.">?</span></summary>
         <label class="row">Layers / colours <span class="out" data-out="layers">2</span>
           <input id="layers" data-param type="range" min="1" max="6" value="2" />
         </label>
@@ -125,7 +125,7 @@
       </details>
 
       <details class="group">
-        <summary class="group-head">4 · Bridges <span class="help" tabindex="0" role="img" aria-label="Bridges help" data-tip="A bridge is a thin sliver of material left uncut to hold a floating piece — the middle of an O, the dot of an i — so it doesn't fall out when cut. SprayCan ties every island automatically, sized to the material and print size. To fine-tune: click a tie to select it, drag a handle or press Delete, or use + Add tie to draw your own.">?</span></summary>
+        <summary class="group-head">4 · Bridges <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Bridges section">↺</button><span class="help" tabindex="0" role="img" aria-label="Bridges help" data-tip="A bridge is a thin sliver of material left uncut to hold a floating piece — the middle of an O, the dot of an i — so it doesn't fall out when cut. SprayCan ties every island automatically, sized to the material and print size. To fine-tune: click a tie to select it, drag a handle or press Delete, or use + Add tie to draw your own.">?</span></summary>
         <label class="row">Material / cut method
           <select id="material" data-param>
             <option value="mylar" selected>Mylar — general (2 mm ties)</option>
@@ -161,7 +161,7 @@
       </details>
 
       <details class="group">
-        <summary class="group-head">5 · Output <span class="help" tabindex="0" role="img" aria-label="Output help" data-tip="Set the real-world width and a page size (used for the PDF cover and as a fallback). Export ▾ (toolbar) gives per-layer SVG cut files for a cutting machine, plus a PDF proof with one page per layer at true size.">?</span></summary>
+        <summary class="group-head">5 · Output <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Output section">↺</button><span class="help" tabindex="0" role="img" aria-label="Output help" data-tip="Set the real-world width and a page size (used for the PDF cover and as a fallback). Export ▾ (toolbar) gives per-layer SVG cut files for a cutting machine, plus a PDF proof with one page per layer at true size.">?</span></summary>
         <label class="row">Target width
           <span class="size-input">
             <input id="targetWidth" data-param type="number" min="1" step="1" value="30" />

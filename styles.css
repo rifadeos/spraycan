@@ -136,8 +136,14 @@ input.out::-webkit-inner-spin-button, input.out::-webkit-outer-spin-button { -we
 .icon-btn[data-tip]:hover::after,
 .icon-btn[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+/* Per-section reset (↺) at the right of the header, before the help "?" */
+.sec-reset { margin-left: auto; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel-2); color: var(--muted); font-size: 12px; line-height: 1; cursor: pointer; flex: 0 0 auto; transition: border-color .12s, color .12s; }
+.sec-reset:hover { color: var(--ink); border-color: var(--accent); }
+.sec-reset:active { transform: rotate(-45deg); }
+
 /* Section help "?" with an on-hover explanation tooltip */
 .group-head .help { margin-left: auto; }
+.group-head .sec-reset + .help { margin-left: 0; } /* sec-reset owns the auto margin */
 .help {
   position: relative; display: inline-flex; align-items: center; justify-content: center;
   width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line);
@@ -226,8 +232,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ---- center stage: original (apex) over Editing + Stacked preview (side by side) ---- */
 .stage { padding: 12px 14px; min-width: 0; display: flex; flex-direction: column; }
-.canvas-host { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; align-items: flex-start; justify-content: center; }
-.canvas-frame { width: calc(var(--zoom, 1) * 100%); flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+/* block + margin:auto (not flex centering) so zoomed-in content can scroll to every
+   edge — a centered flex item clips its overflow and can't be scrolled into view. */
+.canvas-host { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: block; }
+.canvas-frame { width: calc(var(--zoom, 1) * 100%); margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .src-card { margin: 0; }
 .src-card[hidden] { display: none; }
 .src-card figcaption { font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 4px; letter-spacing: .3px; }

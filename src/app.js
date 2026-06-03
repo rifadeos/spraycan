@@ -37,12 +37,13 @@ const els = {
 
 const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false };
 let busyToken = 0;
+let eyedropMode = false; // true while "Pick from image" is armed (sampling a colour)
 const undoStack = []; // per-layer bridge snapshots for Cmd/Ctrl-Z
 
 const editor = new LayerEditor(els.editor, {
   onBridgesChanged,
   onBeforeChange: () => pushUndo(),
-  onSample: (x, y) => { const hex = sampleImageColor(x, y); if (hex) { setColor(state.active, hex, 'Sampled'); ready(`Sampled ${hex} for layer ${state.active + 1}.`); } },
+  onSample: (x, y) => { const hex = sampleImageColor(x, y); if (hex) { setColor(state.active, hex, 'Sampled'); ready(`Sampled ${hex} for layer ${state.active + 1}.`); } endEyedrop(); },
 });
 
 // ---- status helpers -------------------------------------------------------
@@ -400,8 +401,30 @@ function undo() {
 }
 function startEyedrop() {
   if (!state.layers.length) return;
+  eyedropMode = true;
   editor.setMode('eyedrop');
-  busy(`Eyedropper — click your image to colour layer ${state.active + 1}.`);
+  if (els.srcPreview) els.srcPreview.style.cursor = 'copy';
+  busy(`Eyedropper — click the Original photo (top) or the editing image to colour layer ${state.active + 1}.`);
+}
+function endEyedrop() {
+  eyedropMode = false;
+  if (els.srcPreview) els.srcPreview.style.cursor = '';
+  editor.setMode('select');
+}
+// Sample a colour straight from the colour Original preview (the obvious "image").
+function sampleFromSrcPreview(e) {
+  const cv = els.srcPreview;
+  if (!cv || cv.hidden || !cv.width) { endEyedrop(); return; }
+  const r = cv.getBoundingClientRect();
+  const x = Math.max(0, Math.min(cv.width - 1, Math.round((e.clientX - r.left) / r.width * cv.width)));
+  const y = Math.max(0, Math.min(cv.height - 1, Math.round((e.clientY - r.top) / r.height * cv.height)));
+  try {
+    const d = cv.getContext('2d').getImageData(x, y, 1, 1).data;
+    const hex = '#' + [d[0], d[1], d[2]].map(n => n.toString(16).padStart(2, '0')).join('');
+    setColor(state.active, hex, 'Sampled');
+    endEyedrop();
+    ready(`Sampled ${hex} for layer ${state.active + 1}.`);
+  } catch { endEyedrop(); fail('Could not sample that pixel.'); }
 }
 
 // ---- control wiring -------------------------------------------------------
@@ -438,6 +461,28 @@ function resetToDefaults() {
     recomputeAll();
   }
   ready('Settings reset to defaults.');
+}
+
+// Reset just ONE section's controls to their defaults, then recompute.
+function resetSection(grp) {
+  grp.querySelectorAll('[data-param]').forEach(el => {
+    if (!(el.id in DEFAULTS)) return;
+    if (el.type === 'checkbox') el.checked = DEFAULTS[el.id]; else el.value = DEFAULTS[el.id];
+  });
+  reflectValues(els.root);
+  syncRemoveBgBtn();
+  if (!state.img) { ready('Section reset to defaults.'); return; }
+  state.params = mergeParams();
+  editor.defaultWidth = bridgeWidthPx();
+  if (grp.querySelector('#layers')) {            // layer count may have changed → re-derive tones
+    state.params.thresholds = [];
+    reGray();
+    renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
+  } else {
+    reGray();
+  }
+  recomputeAll();
+  ready('Section reset to defaults.');
 }
 
 // Apply a preset: reset the look to a clean baseline, then layer the preset's
@@ -666,6 +711,12 @@ function init() {
   els.root.querySelectorAll('input[type=range][data-param]').forEach(addSteppers);
   // Clicking a section "?" shows its tooltip but must not collapse the section.
   els.root.querySelectorAll('.help').forEach(h => h.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }));
+  // Per-section reset (↺): reset that section's controls only; don't toggle the section.
+  els.root.querySelectorAll('.sec-reset').forEach(b => b.addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    const grp = b.closest('details.group');
+    if (grp) resetSection(grp);
+  }));
   // Sections are independent: start closed, open as many as you like.
   buildColorPanel(els.colorPanel, { palettes: PALETTES, onPick: (hex, name) => setColor(state.active, hex, name), onPickFromImage: startEyedrop });
 
@@ -679,7 +730,10 @@ function init() {
   els.sample.addEventListener('click', loadSample);
   els.open.addEventListener('click', () => els.file.click());
   els.srcUpload.addEventListener('click', () => els.file.click());
-  els.srcPreview.addEventListener('click', () => els.file.click()); // click the preview to replace
+  els.srcPreview.addEventListener('click', e => {
+    if (eyedropMode) { sampleFromSrcPreview(e); return; }  // eyedropper armed → sample the photo
+    els.file.click();                                       // otherwise → click the preview to replace
+  });
   els.reset.addEventListener('click', resetToDefaults);
   els.removeBgBtn.addEventListener('click', () => {
     els.removeBg.checked = !els.removeBg.checked;
