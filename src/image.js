@@ -44,7 +44,7 @@ export function imageToGray(img, opts = {}) {
   }
 
   let gray = { width: w, height: h, data };
-  if (smooth > 0) gray = bilateralFilter(gray, { radius: [0, 3, 5, 7][smooth] ?? 5, sigmaR: 34 }); // flatten texture, keep edges
+  if (smooth > 0) gray = bilateralFilter(gray, { radius: [0, 4, 6, 8][smooth] ?? 6, sigmaR: 40 }); // flatten texture, keep edges
   if (autoLevels) gray = clahe(gray);                    // local-contrast equalize → detail in mid-tones
   if (mirror) gray = flipHorizontal(gray);               // back-cut / reverse stencil
   if (vflip) gray = flipVertical(gray);                  // top/bottom flip

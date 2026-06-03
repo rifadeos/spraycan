@@ -251,9 +251,9 @@ test('flipHorizontal mirrors columns and is its own inverse', () => {
 });
 
 test('pickPreset maps image stats to a sensible preset', () => {
-  assert.equal(pickPreset({ std: 70, toneCount: 4, aspect: 1.5 }), 'logo');     // flat graphic / logo
-  assert.equal(pickPreset({ std: 40, toneCount: 60, aspect: 0.8 }), 'subject'); // portrait-oriented → isolate
-  assert.equal(pickPreset({ std: 40, toneCount: 60, aspect: 1.5 }), 'photo');   // general landscape photo
+  assert.equal(pickPreset({ std: 70, toneCount: 4 }), 'logo');      // few flat tones + contrast → graphic/logo
+  assert.equal(pickPreset({ std: 40, toneCount: 60 }), 'subject');  // a photo → isolate the subject
+  assert.equal(pickPreset({ std: 35, toneCount: 90 }), 'subject');  // busy photo → still subject (with fallback)
 });
 
 test('every preset only references real control ids', () => {

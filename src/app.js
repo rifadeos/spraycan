@@ -331,9 +331,17 @@ async function toggleBackground() {
   busy('Removing background… (first run downloads a model — please wait)');
   try {
     const { removeBackgroundToImage } = await import('./bg.js');
-    const out = await removeBackgroundToImage(state.img);
+    const res = await removeBackgroundToImage(state.img);
     if (my !== busyToken) return; // superseded by a newer action
-    state.processedImg = out;
+    if (res.coverage < 0.05 || res.coverage > 0.95) {
+      // No clear subject (≈0) or it kept everything (≈1) → don't isolate; use the full image.
+      state.processedImg = null;
+      els.removeBg.checked = false; if (state.params) state.params.removeBg = false; syncRemoveBgBtn();
+      reGray(); await recomputeAll();
+      ready('No clear subject to isolate — using the full image.');
+      return;
+    }
+    state.processedImg = res.image;
     reGray();
     await recomputeAll();
   } catch (e) {

@@ -7,9 +7,9 @@
 // cleaner/bolder: stronger smoothing + higher minFeature → fewer tiny pieces.
 
 export const PRESETS = {
-  photo:    { label: 'Photo',            params: { contrast: 10, smooth: 2, detail: 2, layers: 6, minFeature: 9,  autoLevels: true,  keepHighlights: true,  edges: false, removeBg: false } },
-  portrait: { label: 'Portrait',         params: { contrast: 14, smooth: 2, detail: 2, layers: 6, minFeature: 8,  autoLevels: true,  keepHighlights: true,  edges: false, removeBg: false } },
-  subject:  { label: 'Subject (isolate)', params: { contrast: 14, smooth: 2, detail: 2, layers: 6, minFeature: 8,  autoLevels: true,  keepHighlights: true,  edges: false, removeBg: true } },
+  photo:    { label: 'Photo',            params: { contrast: 10, smooth: 3, detail: 2, layers: 6, minFeature: 9,  autoLevels: true,  keepHighlights: true,  edges: false, removeBg: false } },
+  portrait: { label: 'Portrait',         params: { contrast: 14, smooth: 3, detail: 2, layers: 6, minFeature: 8,  autoLevels: true,  keepHighlights: true,  edges: false, removeBg: false } },
+  subject:  { label: 'Subject (isolate)', params: { contrast: 14, smooth: 3, detail: 2, layers: 6, minFeature: 8,  autoLevels: true,  keepHighlights: true,  edges: false, removeBg: true } },
   poster:   { label: 'Bold poster',      params: { contrast: 35, smooth: 3, detail: 1, layers: 2, minFeature: 14, autoLevels: true,  keepHighlights: false, edges: false, removeBg: false } },
   lineart:  { label: 'Line art',         params: { contrast: 12, smooth: 1, detail: 2, layers: 1, minFeature: 6,  autoLevels: true,  keepHighlights: false, edges: true,  edgeAmount: 55, removeBg: false } },
   logo:     { label: 'Logo (B&W)',       params: { contrast: 45, smooth: 3, detail: 1, layers: 1, minFeature: 16, autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
@@ -37,10 +37,11 @@ export function imageStats(gray, aspect = 1) {
   return { mean, std, toneCount, edgeDensity: samples ? edges / samples : 0, aspect };
 }
 
-// Map stats → preset id. Conservative: only the confident cases divert from Photo.
+// Map stats → preset id. A flat graphic stays whole; any photo tries isolating
+// its subject (the bg-removal step has a coverage fallback, so a subject-less
+// scene safely reverts to the full image).
 export function pickPreset(stats) {
-  const { std, toneCount, aspect } = stats;
-  if (toneCount <= 6 && std > 55) return 'logo';   // few flat tones + high contrast → graphic/logo
-  if (aspect < 0.95) return 'subject';              // portrait-oriented → assume a subject; isolate it
-  return 'photo';                                   // general photo
+  const { std, toneCount } = stats;
+  if (toneCount <= 6 && std > 55) return 'logo';   // few flat tones + high contrast → graphic/logo (keep whole)
+  return 'subject';                                 // it's a photo → isolate the subject (auto, with fallback)
 }
