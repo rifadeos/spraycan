@@ -629,37 +629,19 @@ function colorLabel(i) {
   return n ? `${hex} — closest can: ${n.brand} ${n.name}` : hex;
 }
 
-function exportReadme(d) {
-  return [
-    'SprayCan export',
-    '===============',
-    `Final size: ${Math.round(d.widthMm)} x ${Math.round(d.heightMm)} mm`,
-    `Layers: ${state.layers.length} (spray light -> dark; layer 1 first)`,
-    '',
-    'Files:',
-    ...state.layers.map((L, i) => `  layer-${i + 1}.svg  — spray ${i + 1} of ${state.layers.length}, ${colorLabel(i)}, ${L.bridges.length} bridge(s)`),
-    '  preview-all-layers.svg — all layers stacked, for reference',
-    '',
-    'Cut out the filled areas; KEEP the small bridges (ties) — they hold loose',
-    'pieces in place. Align layers with the red registration crosshairs and spray',
-    'the lightest layer first.',
-  ].join('\n');
-}
-
 async function exportPerLayer() {
   if (!state.layers.length) return;
   const d = dims();
   busy('Packaging SVGs…'); await raf();
   try {
     await ensureZip();   // JSZip is loaded on first export, not at page load
+    // One clean cut file per layer — nothing combined.
     const files = state.layers.map((layer, i) => ({
       name: `layer-${i + 1}.svg`,
       content: layerToSVG(layer.traced, d, { fill: state.colors[i], marks: marks() }),
     }));
-    files.push({ name: 'preview-all-layers.svg', content: combinedSVG(state.layers.map(l => l.traced), d, { colors: state.colors, marks: marks() }) });
-    files.push({ name: 'README.txt', content: exportReadme(d) });
     downloadBlob('stencil-svgs.zip', await makeZipBlob(files));
-    ready(`Exported ${state.layers.length}-layer SVG bundle (.zip).`);
+    ready(`Exported ${state.layers.length} per-layer SVG cut files (.zip).`);
   } catch (e) { console.error(e); fail('SVG export failed: ' + e.message); }
 }
 
