@@ -72,10 +72,10 @@ function nearestCanLabel(hex) { const n = findNearestPaint(hex); return n ? `${n
 const MATERIALS = {
   // tieSpacing = anchor a tie roughly every N mm of an island's span; flimsier
   // materials (card) get more ties, stiffer/precise ones (laser) fewer.
-  mylar: { bridge: 2.0, minFeatureMm: 0.6, tieSpacing: 50 },
-  vinyl: { bridge: 2.0, minFeatureMm: 1.0, tieSpacing: 50 },
-  card: { bridge: 3.0, minFeatureMm: 1.5, tieSpacing: 35 },
-  laser: { bridge: 1.2, minFeatureMm: 0.3, tieSpacing: 60 },
+  mylar: { bridge: 2.0, minFeatureMm: 0.6, tieSpacing: 65 },
+  vinyl: { bridge: 2.0, minFeatureMm: 1.0, tieSpacing: 65 },
+  card: { bridge: 3.0, minFeatureMm: 1.5, tieSpacing: 45 },
+  laser: { bridge: 1.2, minFeatureMm: 0.3, tieSpacing: 80 },
 };
 function materialInfo() { return MATERIALS[state.params && state.params.material] || MATERIALS.mylar; }
 

@@ -16,7 +16,7 @@ export function autoBridges(mask, opts = {}) {
   const maxGap = opts.maxGap ?? Math.max(40, Math.round(Math.min(mask.width, mask.height) * 0.3));
   const mmPerPx = opts.mmPerPx ?? null;
   const tieSpacingMm = opts.tieSpacingMm ?? 50;
-  const maxTiesPerIsland = opts.maxTiesPerIsland ?? 8;
+  const maxTiesPerIsland = opts.maxTiesPerIsland ?? 5;
   const { reached, labels } = findIslands(mask);
   const W = mask.width;
 
@@ -143,7 +143,7 @@ export function prepareIslands(mask, opts = {}) {
   const keepHighlights = opts.keepHighlights && brightMask;
   const mmPerPx = opts.mmPerPx ?? null;
   const tieSpacingMm = opts.tieSpacingMm ?? 50;
-  const maxTiesPerIsland = opts.maxTiesPerIsland ?? 8;
+  const maxTiesPerIsland = opts.maxTiesPerIsland ?? 5;
   const { labels, islands } = findIslands(mask);
 
   const ranked = islands.slice().sort((a, b) => b.size - a.size);

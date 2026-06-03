@@ -146,10 +146,44 @@ async function coverPage(pdf, info) {
     'Tape the stencil flat to the surface and press the edges so paint cannot creep underneath.',
     'Spray light, even coats from ~15 cm, held at 90°; let each layer dry before the next.',
     'Line the layers up with the red registration marks; spray the lightest layer first, darkest last.',
+    'To erase tie marks: use the Touch-up map (next page) — dab each spot with that layer’s colour after peeling.',
   ];
   steps.forEach((s, i) => { const lines = pdf.splitTextToSize(`${i + 1}. ${s}`, lineW); pdf.text(lines, margin, y); y += 4.7 * lines.length; });
   y += 5;
   scaleBar(pdf, margin, y + 2, 100);
+}
+
+// "Touch-up map": the stacked preview with every tie marked, so the user can dab
+// each spot with that layer's colour after peeling the stencil and erase the
+// thin un-sprayed line a bridge leaves behind.
+async function touchUpPage(pdf, layers, colors, dims, margin) {
+  const tonal = layers.filter(l => l.traced && !l.isEdge);
+  const ties = tonal.reduce((n, l) => n + l.bridges.length, 0);
+  if (!ties || !tonal.length) return;
+  const designW = dims.widthMm, designH = dims.heightMm;
+  pdf.addPage();
+  const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight();
+  let y = margin + 4;
+  pdf.setTextColor(20); pdf.setFontSize(15); pdf.text('Touch-up map', margin, y); y += 6;
+  pdf.setFontSize(9); pdf.setTextColor(80);
+  const note = 'A bridge (tie) leaves a thin un-sprayed gap. After spraying and peeling the stencil, dab each marked spot with that layer’s colour to erase it. Darker layers’ ties are largely hidden by the colour underneath — the lightest layer’s are the ones that show.';
+  const nlines = pdf.splitTextToSize(note, pageW - 2 * margin);
+  pdf.text(nlines, margin, y); y += 4.6 * nlines.length + 4;
+  const availW = pageW - 2 * margin, availH = pageH - margin - y;
+  const fit = Math.min(availW / designW, availH / designH);
+  const boxW = designW * fit, boxH = designH * fit, bx = (pageW - boxW) / 2, by = y;
+  try {
+    const svg = combinedSVG(tonal.map(l => l.traced), { widthMm: designW, heightMm: designH }, { colors });
+    pdf.setFillColor(244, 244, 244); pdf.rect(bx, by, boxW, boxH, 'F');
+    await renderSVG(pdf, parseSVG(svg), { x: bx, y: by, width: boxW, height: boxH });
+  } catch { /* preview is non-essential */ }
+  const tw = tonal[0].traced.width, th = tonal[0].traced.height;
+  pdf.setDrawColor(255, 0, 160); pdf.setLineWidth(0.5);
+  for (const L of tonal) for (const b of L.bridges) {
+    const mx = bx + (((b.x1 + b.x2) / 2) / tw) * boxW;
+    const my = by + (((b.y1 + b.y2) / 2) / th) * boxH;
+    pdf.circle(mx, my, 1.6, 'S');
+  }
 }
 
 // A proof cover, then ONE page per layer. Each layer page is sized
@@ -172,6 +206,7 @@ export async function exportSheetPDF(layers, colors, dims, opts = {}) {
     margin, designW, designH, layers, colors, colorLabels,
     pageLabel: PAGE_LABELS[pageKey] || pageKey, marks,
   });
+  await touchUpPage(pdf, layers, colors, dims, margin);
 
   for (let li = 0; li < layers.length; li++) {
     const { pageW, pageH, fit } = sheetPageSize(designW, designH, margin, extraV, [coverW, coverH]);
