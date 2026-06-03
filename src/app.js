@@ -17,7 +17,7 @@ import { toHex } from './color.js';
 import { PALETTES, findPaintName, findNearestPaint } from './palettes.js';
 import { readParams, reflectValues, bindControls, renderThresholds, addSteppers } from './ui/controls.js';
 import { renderGuide } from './ui/guide.js';
-import { PRESETS, imageStats, pickPreset, skinFraction } from './presets.js';
+import { PRESETS, imageStats, pickPreset, analyzeColor } from './presets.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
 
@@ -137,8 +137,9 @@ function reburn(layer) {
 // (lower pathomit) and truer curves (lower ltres/qtres).
 function traceOpts() {
   const d = state.params ? state.params.detail : 2;
-  const pathomit = [12, 6, 2, 1][d] ?? 2;
-  return d >= 3 ? { pathomit, ltres: 0.5, qtres: 0.5 } : { pathomit, ltres: 0.8, qtres: 0.8 };
+  const pathomit = [16, 9, 4, 1][d] ?? 4;       // drop more tiny specks at lower detail
+  const tol = [1.4, 1.0, 0.7, 0.4][d] ?? 0.8;   // higher = smoother Bézier fit; lower = more faithful to pixels
+  return { pathomit, ltres: tol, qtres: tol };
 }
 function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, layer.isEdge ? { pathomit: 8 } : traceOpts()); }
 
@@ -463,9 +464,12 @@ function resetToDefaults() {
   ready('Settings reset to defaults.');
 }
 
-// Reset just ONE section's controls to their defaults, then recompute.
+// Reset just ONE section's controls to their defaults, then recompute. The
+// Layers section keeps the chosen layer COUNT (only the other controls reset).
 function resetSection(grp) {
+  const layersEl = grp.querySelector('#layers');
   grp.querySelectorAll('[data-param]').forEach(el => {
+    if (el.id === 'layers') return;              // keep the current number of layers/colours
     if (!(el.id in DEFAULTS)) return;
     if (el.type === 'checkbox') el.checked = DEFAULTS[el.id]; else el.value = DEFAULTS[el.id];
   });
@@ -474,7 +478,7 @@ function resetSection(grp) {
   if (!state.img) { ready('Section reset to defaults.'); return; }
   state.params = mergeParams();
   editor.defaultWidth = bridgeWidthPx();
-  if (grp.querySelector('#layers')) {            // layer count may have changed → re-derive tones
+  if (layersEl) {                                // re-derive tones for the (kept) layer count
     state.params.thresholds = [];
     reGray();
     renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
@@ -517,14 +521,14 @@ function presetForImage(img) {
   const probe = imageToGray(img, { maxResolution: 360, autoLevels: false, smooth: 0 });
   const aspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height || 1);
   const stats = imageStats(probe, aspect);
-  stats.skinFraction = skinFractionFromImage(img, 360); // detect faces → Portrait preset
+  Object.assign(stats, colorStatsForImage(img, 360)); // skin / sky / foliage / saturation
   const id = pickPreset(stats);
   if (els.preset) els.preset.title = 'Auto-picked: ' + (PRESETS[id]?.label || id);
   return id;
 }
 
-// Small RGBA probe so we can detect skin tones for the portrait auto-pick.
-function skinFractionFromImage(img, max = 360) {
+// Small colour (RGBA) probe → skin / sky / foliage / saturation signals for auto-pick.
+function colorStatsForImage(img, max = 360) {
   try {
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
     const s = Math.min(1, max / Math.max(iw, ih));
@@ -532,8 +536,8 @@ function skinFractionFromImage(img, max = 360) {
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     const ctx = c.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(img, 0, 0, w, h);
-    return skinFraction(ctx.getImageData(0, 0, w, h).data, w, h);
-  } catch { return 0; }
+    return analyzeColor(ctx.getImageData(0, 0, w, h).data, w, h);
+  } catch { return {}; }
 }
 
 let previewTimer = 0;

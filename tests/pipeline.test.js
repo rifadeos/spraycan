@@ -14,7 +14,7 @@ import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
 import { autoLevels, clahe, bilateralFilter, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
-import { PRESETS, imageStats, pickPreset, skinFraction } from '../src/presets.js';
+import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor } from '../src/presets.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -288,6 +288,30 @@ test('portrait preset isolates the subject and uses few layers (fights face hole
   assert.equal(PRESETS.portrait.params.removeBg, true);
   assert.ok(PRESETS.portrait.params.layers <= 4, 'portrait uses few layers');
   assert.ok(PRESETS.portrait.params.minFeature >= 10, 'portrait merges small facial islands');
+});
+
+test('analyzeColor detects sky + foliage; pickPreset → landscape', () => {
+  const W = 40, H = 40, d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4, top = y < H * 0.42;       // top = sky, bottom = foliage
+    d[i] = top ? 100 : 60; d[i + 1] = top ? 150 : 160; d[i + 2] = top ? 220 : 70; d[i + 3] = 255;
+  }
+  const a = analyzeColor(d, W, H);
+  assert.ok(a.skyFraction > 0.4, `skyFraction ${a.skyFraction}`);
+  assert.ok(a.greenFraction > 0.3, `greenFraction ${a.greenFraction}`);
+  assert.equal(pickPreset(a), 'landscape');
+});
+
+test('pickPreset priority: face > logo > landscape > subject', () => {
+  assert.equal(pickPreset({ skinFraction: 0.2, greenFraction: 0.5 }), 'portrait');   // a face wins
+  assert.equal(pickPreset({ toneCount: 4, std: 70, greenFraction: 0.5 }), 'logo');   // flat graphic next
+  assert.equal(pickPreset({ toneCount: 60, skyFraction: 0.5 }), 'landscape');        // outdoor scene
+  assert.equal(pickPreset({ toneCount: 60, std: 40 }), 'subject');                   // plain photo → isolate
+});
+
+test('landscape preset keeps the whole image (no isolate) with rich tones', () => {
+  assert.equal(PRESETS.landscape.params.removeBg, false);
+  assert.ok(PRESETS.landscape.params.layers >= 5);
 });
 
 test('every preset only references real control ids', () => {
