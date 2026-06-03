@@ -1,4 +1,4 @@
-// StencilForge — app controller. Owns state, runs the pipeline, wires the UI.
+// SprayCan — app controller. Owns state, runs the pipeline, wires the UI.
 
 import { fileToImage, imageToGray } from './image.js';
 import { autoThresholds, buildLayers } from './posterize.js';
@@ -27,7 +27,7 @@ const els = {
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
   exportSvg: $('exportSvg'), exportCombined: $('exportCombined'), exportPdf: $('exportPdf'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
-  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'),
+  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), reset: $('reset'),
 };
 
 const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null };
@@ -80,7 +80,7 @@ function reGray() {
   const src = (p.removeBg && state.processedImg) ? state.processedImg : state.img;
   state.gray = imageToGray(src, {
     maxResolution: p.maxResolution, brightness: p.brightness * 1.2, contrast: p.contrast * 2,
-    invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels,
+    invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror,
   });
   if (!p.thresholds || !p.thresholds.length) p.thresholds = autoThresholds(state.gray, p.layers);
   buildSampleData(src);
@@ -104,6 +104,7 @@ function buildBrightMask(gray) {
 function sampleImageColor(x, y) {
   const d = state.sampleData;
   if (!d) return null;
+  if (state.params && state.params.mirror) x = d.width - 1 - x; // sampleData is un-mirrored
   const ix = Math.max(0, Math.min(d.width - 1, Math.round(x)));
   const iy = Math.max(0, Math.min(d.height - 1, Math.round(y)));
   const i = (iy * d.width + ix) * 4;
@@ -319,6 +320,34 @@ function mergeParams() {
   return p;
 }
 
+// Control defaults captured from the HTML at startup, for "Reset to defaults"
+// and for giving each newly-loaded image a clean look-baseline.
+const DEFAULTS = {};
+const LOOK_IDS = ['brightness', 'contrast', 'smooth', 'detail', 'invert', 'autoLevels', 'mirror', 'layers', 'minFeature', 'keepHighlights', 'edges', 'edgeAmount', 'removeBg'];
+function captureDefaults() {
+  els.root.querySelectorAll('[data-param]').forEach(el => { DEFAULTS[el.id] = (el.type === 'checkbox') ? el.checked : el.value; });
+}
+function applyDefaults(ids) {
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || !(id in DEFAULTS)) return;
+    if (el.type === 'checkbox') el.checked = DEFAULTS[id]; else el.value = DEFAULTS[id];
+  });
+  reflectValues(els.root);
+}
+function resetToDefaults() {
+  applyDefaults(Object.keys(DEFAULTS));
+  state.processedImg = null;
+  state.params = mergeParams();
+  state.params.thresholds = [];
+  if (state.img) {
+    reGray();
+    renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
+    recomputeAll();
+  }
+  ready('Settings reset to defaults.');
+}
+
 function onInput(el) { reflectValues(els.root); }
 
 function onChange(el) {
@@ -327,7 +356,7 @@ function onChange(el) {
   if (!state.img) return;
   switch (el.id) {
     case 'brightness': case 'contrast': case 'invert': case 'maxResolution':
-    case 'smooth': case 'autoLevels':
+    case 'smooth': case 'autoLevels': case 'mirror':
       reGray(); recomputeAll(); break;
     case 'layers':
       state.params.thresholds = autoThresholds(state.gray, state.params.layers);
@@ -431,7 +460,7 @@ async function exportPDF() {
 async function useImage(img) {
   state.img = img;
   state.processedImg = null;
-  els.removeBg.checked = false;
+  applyDefaults(LOOK_IDS);   // each new image starts from a clean look-baseline (output prefs kept)
   state.params = mergeParams();
   state.params.thresholds = [];
   reGray();
@@ -458,6 +487,7 @@ function loadSample() {
 // ---- init -----------------------------------------------------------------
 function init() {
   reflectValues(els.root);
+  captureDefaults();
   setExportsEnabled(false);
   bindControls(els.root, { onInput, onChange });
   buildColorPanel(els.colorPanel, { palettes: PALETTES, onPick: (hex, name) => setColor(state.active, hex, name), onPickFromImage: startEyedrop });
@@ -470,6 +500,7 @@ function init() {
     catch (err) { fail('Could not load image: ' + err.message); }
   });
   els.sample.addEventListener('click', loadSample);
+  els.reset.addEventListener('click', resetToDefaults);
 
   els.autoBridge.addEventListener('click', () => {
     const layer = state.layers[state.active];

@@ -12,7 +12,7 @@ import { findIslands } from '../src/islands.js';
 import { autoBridges, burnBridges, prepareIslands } from '../src/bridges.js';
 import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS } from '../src/exporters/pdf.js';
-import { autoLevels, medianFilter } from '../src/filters.js';
+import { autoLevels, medianFilter, flipHorizontal } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
 
 // --- helpers ---------------------------------------------------------------
@@ -166,6 +166,14 @@ test('medianFilter removes a lone speckle', () => {
   const g = gray([[100, 100, 100], [100, 255, 100], [100, 100, 100]]);
   const r = medianFilter(g, 1);
   assert.ok([...r.data].every(v => v === 100));
+});
+
+test('flipHorizontal mirrors columns and is its own inverse', () => {
+  const g = gray([[1, 2, 3], [4, 5, 6]]);
+  const f = flipHorizontal(g);
+  assert.equal(f.width, 3); assert.equal(f.height, 2);
+  assert.deepEqual([...f.data], [3, 2, 1, 6, 5, 4]);
+  assert.deepEqual([...flipHorizontal(f).data], [...g.data]); // double flip = identity
 });
 
 test('page-size table is sane (mm; A-series ascending)', () => {

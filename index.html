@@ -49,6 +49,7 @@
           <input id="detail" data-param type="range" min="0" max="3" value="2" />
         </label>
         <label class="check"><input id="invert" data-param type="checkbox" /> Invert (dark background)</label>
+        <label class="check"><input id="mirror" data-param type="checkbox" /> Mirror / flip (back-cut)</label>
         <label class="check"><input id="autoLevels" data-param type="checkbox" checked /> Auto-levels (spread tones)</label>
       </fieldset>
 
@@ -167,6 +168,10 @@
           <input id="overlap" data-param type="range" min="0" max="25" step="1" value="8" />
         </label>
       </details>
+
+      <div class="btn-row">
+        <button id="reset" type="button">Reset to defaults</button>
+      </div>
 
       <div id="status" class="status" role="status">Load an image to begin.</div>
     </aside>

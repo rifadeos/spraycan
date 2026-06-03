@@ -18,6 +18,7 @@ export function readParams(root) {
     brightness: +g('brightness').value,
     contrast: +g('contrast').value,
     invert: g('invert').checked,
+    mirror: g('mirror').checked,
     smooth: +g('smooth').value,
     detail: +g('detail').value,
     autoLevels: g('autoLevels').checked,

@@ -22,6 +22,17 @@ export function autoLevels(gray, loPct = 0.5, hiPct = 99.5) {
   return { width, height, data: out };
 }
 
+// Mirror a grayscale buffer horizontally (for back-cutting / reverse stencils).
+export function flipHorizontal(gray) {
+  const { width: W, height: H, data } = gray;
+  const out = new Uint8ClampedArray(W * H);
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    for (let x = 0; x < W; x++) out[row + (W - 1 - x)] = data[row + x];
+  }
+  return { width: W, height: H, data: out };
+}
+
 // Median filter — edge-preserving despeckle that turns noisy texture (fur,
 // grass) into cleaner shapes without blurring boundaries. radius in pixels.
 export function medianFilter(gray, radius) {
