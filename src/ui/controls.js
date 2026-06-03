@@ -5,6 +5,7 @@
 export function readParams(root) {
   const g = id => root.querySelector('#' + id);
   return {
+    preset: g('preset').value,            // auto | photo | portrait | subject | poster | lineart | logo
     layers: +g('layers').value,
     minFeature: +g('minFeature').value,
     bridgeWidth: +g('bridgeWidth').value, // mm

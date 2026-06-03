@@ -33,6 +33,46 @@ export function flipHorizontal(gray) {
   return { width: W, height: H, data: out };
 }
 
+// Bilateral filter — edge-preserving smoothing. Averages each pixel with its
+// neighbours weighted by BOTH spatial distance and tonal similarity, so flat-ish
+// texture (grass, fur, skin) is flattened into clean regions while strong edges
+// stay crisp. This is the "flatten before posterize" step pro stencil/trace tools
+// rely on. radius in px; sigmaR is the tonal tolerance (bigger = more flattening).
+export function bilateralFilter(gray, opts = {}) {
+  const { width: W, height: H, data } = gray;
+  const radius = Math.max(0, Math.round(opts.radius ?? 0));
+  const out = new Uint8ClampedArray(W * H);
+  if (radius <= 0) { out.set(data); return { width: W, height: H, data: out }; }
+  const sigmaR = opts.sigmaR ?? 32;
+  const sigmaS = opts.sigmaS ?? (radius / 1.5);
+  const span = 2 * radius + 1;
+  const spatial = new Float32Array(span * span);
+  for (let dy = -radius; dy <= radius; dy++)
+    for (let dx = -radius; dx <= radius; dx++)
+      spatial[(dy + radius) * span + (dx + radius)] = Math.exp(-(dx * dx + dy * dy) / (2 * sigmaS * sigmaS));
+  const rangeLUT = new Float32Array(256);
+  for (let d = 0; d < 256; d++) rangeLUT[d] = Math.exp(-(d * d) / (2 * sigmaR * sigmaR));
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const c = data[y * W + x];
+      let sum = 0, wsum = 0;
+      for (let dy = -radius; dy <= radius; dy++) {
+        const yy = y + dy; if (yy < 0 || yy >= H) continue;
+        const row = yy * W, srow = (dy + radius) * span;
+        for (let dx = -radius; dx <= radius; dx++) {
+          const xx = x + dx; if (xx < 0 || xx >= W) continue;
+          const v = data[row + xx];
+          const w = spatial[srow + (dx + radius)] * rangeLUT[Math.abs(v - c)];
+          sum += w * v; wsum += w;
+        }
+      }
+      out[y * W + x] = wsum > 0 ? sum / wsum : c;
+    }
+  }
+  return { width: W, height: H, data: out };
+}
+
 // Contrast-Limited Adaptive Histogram Equalization. Equalises contrast within
 // local tiles (with a clip limit so noise isn't over-amplified), then bilinearly
 // blends the per-tile mappings so there are no seams. This pulls real detail out

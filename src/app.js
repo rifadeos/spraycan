@@ -16,6 +16,7 @@ import { toHex } from './color.js';
 import { PALETTES, findPaintName, findNearestPaint } from './palettes.js';
 import { readParams, reflectValues, bindControls, renderThresholds, addSteppers } from './ui/controls.js';
 import { renderGuide } from './ui/guide.js';
+import { PRESETS, imageStats, pickPreset } from './presets.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
 
@@ -27,7 +28,7 @@ const els = {
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
   exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
-  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'),
+  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'),
   stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
   srcPreview: $('srcPreview'), srcCard: $('srcCard'), srcUpload: $('srcUpload'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
@@ -130,7 +131,7 @@ function reburn(layer) {
 function traceOpts() {
   const d = state.params ? state.params.detail : 2;
   const pathomit = [12, 6, 2, 1][d] ?? 2;
-  return d >= 3 ? { pathomit, ltres: 0.5, qtres: 0.5 } : { pathomit };
+  return d >= 3 ? { pathomit, ltres: 0.5, qtres: 0.5 } : { pathomit, ltres: 0.8, qtres: 0.8 };
 }
 function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, layer.isEdge ? { pathomit: 8 } : traceOpts()); }
 
@@ -403,6 +404,39 @@ function resetToDefaults() {
   ready('Settings reset to defaults.');
 }
 
+// Apply a preset: reset the look to a clean baseline, then layer the preset's
+// control values on top, then recompute (background removal handles its own).
+function applyPreset(id) {
+  const preset = PRESETS[id] || PRESETS.photo;
+  applyDefaults(LOOK_IDS);
+  Object.entries(preset.params).forEach(([cid, val]) => {
+    const el = document.getElementById(cid);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = !!val; else el.value = String(val);
+  });
+  reflectValues(els.root);
+  syncRemoveBgBtn();
+  state.params = mergeParams();
+  state.params.thresholds = [];
+  if (!state.img) return;
+  reGray();
+  renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
+  if (state.params.removeBg) return toggleBackground();
+  return recomputeAll();
+}
+
+// Resolve the preset to apply for the current image: an explicit choice, or
+// auto-pick from a quick neutral probe of the image when the select is on "Auto".
+function presetForImage(img) {
+  const sel = els.preset ? els.preset.value : 'auto';
+  if (sel !== 'auto') { if (els.preset) els.preset.title = ''; return sel; }
+  const probe = imageToGray(img, { maxResolution: 360, autoLevels: false, smooth: 0 });
+  const aspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height || 1);
+  const id = pickPreset(imageStats(probe, aspect));
+  if (els.preset) els.preset.title = 'Auto-picked: ' + (PRESETS[id]?.label || id);
+  return id;
+}
+
 function onInput(el) { reflectValues(els.root); }
 
 function onChange(el) {
@@ -431,6 +465,8 @@ function onChange(el) {
       reflectValues(els.root); editor.defaultWidth = bridgeWidthPx();
       recomputeAll(); break;
     }
+    case 'preset':
+      applyPreset(presetForImage(state.img)); break;
     case 'removeBg':
       toggleBackground(); break;
     case 'bridgeWidth':
@@ -510,12 +546,9 @@ async function exportPDF() {
 async function useImage(img) {
   state.img = img;
   state.processedImg = null;
-  applyDefaults(LOOK_IDS);   // each new image starts from a clean look-baseline (output prefs kept)
-  state.params = mergeParams();
-  state.params.thresholds = [];
-  reGray();
-  renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-  await recomputeAll();
+  // Start from a tuned preset (auto-picked per image, or the user's explicit choice)
+  // so the upload looks near-finished instead of starting from a generic default.
+  await applyPreset(presetForImage(img));
 }
 
 // A built-in demo (concentric tones + enclosed islands) so the tool can be

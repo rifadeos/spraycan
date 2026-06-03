@@ -12,8 +12,9 @@ import { findIslands } from '../src/islands.js';
 import { autoBridges, burnBridges, prepareIslands } from '../src/bridges.js';
 import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
-import { autoLevels, clahe, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
+import { autoLevels, clahe, bilateralFilter, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
+import { PRESETS, imageStats, pickPreset } from '../src/presets.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -247,6 +248,42 @@ test('flipHorizontal mirrors columns and is its own inverse', () => {
   assert.equal(f.width, 3); assert.equal(f.height, 2);
   assert.deepEqual([...f.data], [3, 2, 1, 6, 5, 4]);
   assert.deepEqual([...flipHorizontal(f).data], [...g.data]); // double flip = identity
+});
+
+test('pickPreset maps image stats to a sensible preset', () => {
+  assert.equal(pickPreset({ std: 70, toneCount: 4, aspect: 1.5 }), 'logo');     // flat graphic / logo
+  assert.equal(pickPreset({ std: 40, toneCount: 60, aspect: 0.8 }), 'subject'); // portrait-oriented → isolate
+  assert.equal(pickPreset({ std: 40, toneCount: 60, aspect: 1.5 }), 'photo');   // general landscape photo
+});
+
+test('every preset only references real control ids', () => {
+  const VALID = new Set(['brightness', 'contrast', 'smooth', 'detail', 'invert', 'autoLevels', 'mirror', 'vflip', 'layers', 'minFeature', 'keepHighlights', 'edges', 'edgeAmount', 'removeBg']);
+  for (const [id, p] of Object.entries(PRESETS)) {
+    assert.ok(p.label, `${id} needs a label`);
+    for (const k of Object.keys(p.params)) assert.ok(VALID.has(k), `${id} references unknown control "${k}"`);
+  }
+});
+
+test('imageStats summarises a two-tone image', () => {
+  const rows = [];
+  for (let y = 0; y < 16; y++) rows.push(new Array(16).fill(y < 8 ? 40 : 210));
+  const s = imageStats(gray(rows), 1);
+  assert.ok(s.std > 50);          // high contrast
+  assert.equal(s.toneCount, 2);   // two dominant tones
+});
+
+test('bilateralFilter smooths noise but keeps a hard edge', () => {
+  const W = 24, H = 24, data = new Uint8ClampedArray(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const base = x < W / 2 ? 60 : 200;
+    data[y * W + x] = base + (((x + y) % 2) ? 12 : -12); // ±12 checker noise on each side
+  }
+  const r = bilateralFilter({ width: W, height: H, data }, { radius: 3, sigmaR: 30 });
+  const mid = Math.floor(H / 2) * W;
+  assert.ok(r.data[mid + 5] < 110, `left side should stay dark, got ${r.data[mid + 5]}`);
+  assert.ok(r.data[mid + 18] > 150, `right side should stay light, got ${r.data[mid + 18]}`);
+  const variance = buf => { let s = 0, s2 = 0, n = 0; for (let y = 4; y < H - 4; y++) for (let x = 2; x < 10; x++) { const v = buf[y * W + x]; s += v; s2 += v * v; n++; } return s2 / n - (s / n) ** 2; };
+  assert.ok(variance(r.data) < variance(data), 'left-region noise variance should drop');
 });
 
 test('clahe widens local contrast and stays in range', () => {

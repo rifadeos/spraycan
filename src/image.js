@@ -2,7 +2,7 @@
 // Produces the working-resolution { width, height, data:Uint8ClampedArray }
 // luminance buffer the rest of the pipeline consumes.
 
-import { autoLevels as stretchLevels, clahe, medianFilter, flipHorizontal, flipVertical } from './filters.js';
+import { autoLevels as stretchLevels, clahe, bilateralFilter, medianFilter, flipHorizontal, flipVertical } from './filters.js';
 
 export function fitSize(w, h, max) {
   const longEdge = Math.max(w, h);
@@ -44,7 +44,7 @@ export function imageToGray(img, opts = {}) {
   }
 
   let gray = { width: w, height: h, data };
-  if (smooth > 0) gray = medianFilter(gray, smooth);     // edge-preserving despeckle
+  if (smooth > 0) gray = bilateralFilter(gray, { radius: [0, 3, 5, 7][smooth] ?? 5, sigmaR: 34 }); // flatten texture, keep edges
   if (autoLevels) gray = clahe(gray);                    // local-contrast equalize → detail in mid-tones
   if (mirror) gray = flipHorizontal(gray);               // back-cut / reverse stencil
   if (vflip) gray = flipVertical(gray);                  // top/bottom flip

@@ -78,7 +78,18 @@
   <main class="app" id="root">
     <aside class="panel">
       <details class="group" open>
-        <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). High-contrast subjects (portraits, logos, bold shapes) work best. Your image is processed locally and never uploaded. Remove background isolates the subject — it downloads a small model the first time.">?</span></summary>
+        <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto picks the best fit per image; switch it or tweak the sliders from there. Your image is processed locally and never uploaded.">?</span></summary>
+        <label class="row">Preset
+          <select id="preset" data-param>
+            <option value="auto" selected>Auto (pick per image)</option>
+            <option value="photo">Photo</option>
+            <option value="portrait">Portrait</option>
+            <option value="subject">Subject (isolate)</option>
+            <option value="poster">Bold poster</option>
+            <option value="lineart">Line art</option>
+            <option value="logo">Logo (B&amp;W)</option>
+          </select>
+        </label>
         <button id="removeBgBtn" type="button" class="toggle-btn" aria-pressed="false">Remove background</button>
         <input id="removeBg" data-param type="checkbox" class="vh" />
       </details>
