@@ -21,7 +21,7 @@ No server, no upload, no build step. Your image never leaves your device.
 It's static files, but ES modules must be served over HTTP (not opened as `file://`):
 
 ```bash
-cd stencilforge
+cd spraycan
 python3 -m http.server 8000      # then open http://localhost:8000
 # or:  npx serve .
 ```
