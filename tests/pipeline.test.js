@@ -12,7 +12,7 @@ import { findIslands } from '../src/islands.js';
 import { autoBridges, burnBridges, prepareIslands } from '../src/bridges.js';
 import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
-import { autoLevels, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
+import { autoLevels, clahe, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
 
 // --- helpers ---------------------------------------------------------------
@@ -247,6 +247,16 @@ test('flipHorizontal mirrors columns and is its own inverse', () => {
   assert.equal(f.width, 3); assert.equal(f.height, 2);
   assert.deepEqual([...f.data], [3, 2, 1, 6, 5, 4]);
   assert.deepEqual([...flipHorizontal(f).data], [...g.data]); // double flip = identity
+});
+
+test('clahe widens local contrast and stays in range', () => {
+  const rows = [];
+  for (let y = 0; y < 64; y++) rows.push(new Array(64).fill(110 + y)); // low-contrast vertical ramp 110..173 (range 63)
+  const r = clahe(gray(rows), { tiles: 2, clip: 4 });
+  assert.equal(r.width, 64); assert.equal(r.height, 64);
+  let lo = 255, hi = 0;
+  for (const v of r.data) { assert.ok(v >= 0 && v <= 255); if (v < lo) lo = v; if (v > hi) hi = v; }
+  assert.ok(hi - lo > 63, `expected widened range (>63), got ${hi - lo}`);
 });
 
 test('flipVertical mirrors rows and is its own inverse', () => {

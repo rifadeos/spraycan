@@ -555,6 +555,7 @@ function init() {
   els.sample.addEventListener('click', loadSample);
   els.open.addEventListener('click', () => els.file.click());
   els.srcUpload.addEventListener('click', () => els.file.click());
+  els.srcPreview.addEventListener('click', () => els.file.click()); // click the preview to replace
   els.reset.addEventListener('click', resetToDefaults);
   els.removeBgBtn.addEventListener('click', () => {
     els.removeBg.checked = !els.removeBg.checked;
