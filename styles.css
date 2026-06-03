@@ -97,8 +97,16 @@ input[type=file] { width: 100%; font-size: 12.5px; margin-top: 6px; color: var(-
 .icon-toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
-/* Instant custom tooltip for toolbar icon toggles (replaces the slow native title) */
-.icon-toggle[data-tip]::after {
+/* Icon action buttons (auto-bridge / add tie / delete tie) */
+.icon-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); color: var(--muted); cursor: pointer; flex: 0 0 auto; transition: border-color .12s, background .12s, color .12s; }
+.icon-btn:hover { border-color: var(--accent); color: var(--ink); }
+.icon-btn.active { border-color: var(--accent); background: rgba(217,165,40,.18); color: var(--accent-2); }
+.icon-btn:disabled { opacity: .45; cursor: not-allowed; }
+.icon-btn .icn { width: 20px; height: 20px; display: block; }
+.icon-row { gap: 8px; }
+
+/* Instant custom tooltip for toolbar icon toggles + icon action buttons */
+.icon-toggle[data-tip]::after, .icon-btn[data-tip]::after {
   content: attr(data-tip);
   position: absolute; top: calc(100% + 7px); left: 50%;
   transform: translateX(-50%) translateY(-3px);
@@ -109,7 +117,28 @@ input[type=file] { width: 100%; font-size: 12.5px; margin-top: 6px; color: var(-
   opacity: 0; pointer-events: none; transition: opacity .12s, transform .12s; z-index: 60;
 }
 .icon-toggle[data-tip]:hover::after,
-.icon-toggle[data-tip]:focus-within::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+.icon-toggle[data-tip]:focus-within::after,
+.icon-btn[data-tip]:hover::after,
+.icon-btn[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Section help "?" with an on-hover explanation tooltip */
+.group-head .help { margin-left: auto; }
+.help {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--panel-2); color: var(--muted); font-size: 10px; font-weight: 700; cursor: help; flex: 0 0 auto;
+}
+.help:hover, .help:focus-visible { color: var(--ink); border-color: var(--accent); outline: none; }
+.help[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute; top: calc(100% + 8px); right: 0;
+  background: #0c0d0f; color: var(--ink); border: 1px solid var(--line);
+  font-size: 11px; font-weight: 400; line-height: 1.45; white-space: normal; text-align: left;
+  width: max-content; max-width: 240px;
+  padding: 7px 9px; border-radius: 7px; box-shadow: 0 10px 26px rgba(0,0,0,.55);
+  opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 80;
+}
+.help:hover[data-tip]::after, .help:focus-visible[data-tip]::after { opacity: 1; }
 
 /* Inline explainer disclosure (e.g. "What are bridges?") */
 .explain { margin-top: 10px; }
@@ -118,7 +147,16 @@ input[type=file] { width: 100%; font-size: 12.5px; margin-top: 6px; color: var(-
 .explain summary::before { content: "ⓘ "; }
 .explain p { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
 
-input[type=range] { width: 100%; accent-color: var(--accent); }
+/* Subtle Illustrator-style track + small neutral thumb (not the heavy yellow bar) */
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: var(--line); border-radius: 3px; cursor: pointer; margin: 6px 0; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 1px solid rgba(0,0,0,.4); box-shadow: 0 1px 2px rgba(0,0,0,.4); cursor: pointer; }
+input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 1px solid rgba(0,0,0,.4); cursor: pointer; }
+input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+/* − / + steppers around each slider */
+.range-wrap { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+.range-wrap input[type=range] { margin: 0; }
+.step { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; font-size: 15px; line-height: 1; border-radius: 6px; color: var(--muted); }
+.step:hover { color: var(--ink); }
 select, input[type=number], input[type=text] {
   background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
   border-radius: 7px; padding: 7px 8px; font-size: 13px;
@@ -149,6 +187,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.primary:hover { background: #e8b53a; border-color: #e8b53a; }
 button.active { border-color: var(--accent); background: rgba(217, 165, 40, 0.18); color: var(--accent-2); }
 button:disabled { opacity: .45; cursor: not-allowed; }
+.toggle-btn { width: 100%; margin-top: 4px; }
+.toggle-btn.active::before { content: "✓ "; }
 
 /* Bottom status + zoom bar (like a pro app's footer) */
 .statusbar { display: flex; align-items: center; gap: 12px; padding: 6px 14px; border-top: 1px solid var(--line); background: var(--panel); }
@@ -166,27 +206,19 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .menu-pop button { flex: 1 1 auto; width: 100%; text-align: left; background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 9px 10px; }
 .menu-pop button:hover { background: rgba(217,165,40,.16); border-color: transparent; }
 
-/* ---- center stage: one canvas + a view toggle ---- */
-.stage { padding: 12px 14px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
-.canvas-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.canvas-title { font-size: 13px; font-weight: 600; color: var(--muted); }
-.canvas-title span { color: var(--ink); }
-.view-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
-.seg { flex: 0 0 auto; background: var(--panel-2); border: 0; border-radius: 0; padding: 6px 12px; font-size: 12.5px; color: var(--muted); }
-.seg + .seg { border-left: 1px solid var(--line); }
-.seg:hover { color: var(--ink); }
-.seg.active { background: rgba(217,165,40,.18); color: var(--accent-2); }
-.canvas-host {
-  flex: 1; min-height: 0; overflow: auto; padding: 12px;
-  border: 1px solid var(--line); border-radius: var(--radius);
-  display: flex; align-items: safe center; justify-content: safe center;
-  background-color: #141518;
-  background-image:
-    linear-gradient(45deg, #1c1e23 25%, transparent 25%), linear-gradient(-45deg, #1c1e23 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #1c1e23 75%), linear-gradient(-45deg, transparent 75%, #1c1e23 75%);
-  background-size: 22px 22px; background-position: 0 0, 0 11px, 11px -11px, -11px 0;
-}
-.canvas-frame { width: calc(var(--zoom, 1) * 100%); flex: 0 0 auto; }
+/* ---- center stage: original (apex) over Editing + Stacked preview (side by side) ---- */
+.stage { padding: 12px 14px; min-width: 0; display: flex; flex-direction: column; }
+.canvas-host { flex: 1; min-height: 0; overflow: auto; padding: 14px; display: flex; align-items: flex-start; justify-content: center; }
+.canvas-frame { width: calc(var(--zoom, 1) * 100%); flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.src-card { margin: 0; }
+.src-card[hidden] { display: none; }
+.src-card figcaption { font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 4px; letter-spacing: .3px; }
+#srcPreview { display: block; max-width: 200px; max-height: 150px; height: auto; border: 1px solid var(--line); border-radius: 8px; }
+.canvases { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; align-items: start; }
+@media (max-width: 980px) { .canvases { grid-template-columns: 1fr; } }
+.canvas-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+.canvas-h { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.canvas-h span { color: var(--ink); }
 
 /* ---- right dock: Layers + Properties ---- */
 .dock { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; display: flex; flex-direction: column; }
@@ -227,13 +259,17 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .cp-chip:hover { transform: scale(1.14); border-color: var(--ink); }
 .cp-note { margin: 10px 0 0; color: var(--muted); font-size: 11px; }
 
-/* one canvas in the frame; the view toggle swaps editor (This layer) vs combined (All) */
-.editor-wrap, .preview-wrap { width: 100%; display: flex; align-items: center; justify-content: center; }
-.preview-wrap { display: none; }
-.stage.view-all .editor-wrap { display: none; }
-.stage.view-all .preview-wrap { display: flex; }
-#editor { width: 100%; height: auto; max-width: none; cursor: crosshair; touch-action: none; display: block; }
+.editor-wrap, .preview-wrap {
+  background-color: #141518;
+  background-image:
+    linear-gradient(45deg, #1c1e23 25%, transparent 25%), linear-gradient(-45deg, #1c1e23 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1c1e23 75%), linear-gradient(-45deg, transparent 75%, #1c1e23 75%);
+  background-size: 18px 18px; background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+  border: 1px solid var(--line); border-radius: 8px; min-height: 200px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+#editor { max-width: 100%; height: auto; cursor: crosshair; touch-action: none; display: block; }
 #editor:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
-.preview-wrap svg { width: 100%; height: auto; display: block; }
-.empty, .editor-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 28px 20px; }
+.preview-wrap svg { max-width: 100%; height: auto; display: block; }
+.empty, .editor-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 16px; }
 .editor-empty strong { display: block; color: var(--ink); font-size: 14px; margin-bottom: 4px; }

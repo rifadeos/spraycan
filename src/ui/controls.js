@@ -45,6 +45,30 @@ export function bindControls(root, { onInput, onChange }) {
   });
 }
 
+// Wrap a range input with − / + stepper buttons (Illustrator-style precise nudge).
+export function addSteppers(range) {
+  if (!range || range.dataset.stepped) return;
+  range.dataset.stepped = '1';
+  const step = +range.step || 1;
+  const bump = d => {
+    const v = Math.max(+range.min, Math.min(+range.max, +range.value + d * step));
+    if (v === +range.value) return;
+    range.value = String(v);
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+    range.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  const mk = (txt, d) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'step'; b.textContent = txt; b.tabIndex = -1;
+    b.addEventListener('click', () => bump(d));
+    return b;
+  };
+  const wrap = document.createElement('div');
+  wrap.className = 'range-wrap';
+  range.replaceWith(wrap);
+  wrap.append(mk('−', -1), range, mk('+', 1));
+}
+
 // Dynamic per-tone threshold sliders (count follows the layer count).
 export function renderThresholds(container, thresholds, onInput) {
   container.innerHTML = '';
@@ -59,6 +83,7 @@ export function renderThresholds(container, thresholds, onInput) {
     slider.addEventListener('input', () => { val.textContent = slider.value; });
     slider.addEventListener('change', () => onInput(i, +slider.value));
     row.append(slider, val);
+    addSteppers(slider);
     container.appendChild(row);
   });
 }

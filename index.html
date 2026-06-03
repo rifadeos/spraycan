@@ -78,13 +78,13 @@
   <main class="app" id="root">
     <aside class="panel">
       <details class="group" open>
-        <summary class="group-head">1 · Image</summary>
-        <label class="check"><input id="removeBg" data-param type="checkbox" /> Remove background (isolate the subject)</label>
-        <p class="hint">Load with <strong>Open image</strong> or <strong>Sample</strong> in the toolbar above. High-contrast subjects (portraits, logos, bold shapes) work best; your image is processed locally and never uploaded. (Remove background downloads a small model the first time.)</p>
+        <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). High-contrast subjects (portraits, logos, bold shapes) work best. Your image is processed locally and never uploaded. Remove background isolates the subject — it downloads a small model the first time.">?</span></summary>
+        <button id="removeBgBtn" type="button" class="toggle-btn" aria-pressed="false">Remove background</button>
+        <input id="removeBg" data-param type="checkbox" class="vh" />
       </details>
 
       <details class="group" open>
-        <summary class="group-head">2 · Adjust</summary>
+        <summary class="group-head">2 · Adjust <span class="help" tabindex="0" role="img" aria-label="Adjust help" data-tip="Tune brightness, contrast, smoothing and line detail until the shapes read clearly. Invert, flip and auto-contrast live in the toolbar above.">?</span></summary>
         <label class="row">Brightness <span class="out" data-out="brightness">0</span>
           <input id="brightness" data-param type="range" min="-100" max="100" value="0" />
         </label>
@@ -97,11 +97,10 @@
         <label class="row">Line detail <span class="out" data-out="detail">2</span>
           <input id="detail" data-param type="range" min="0" max="3" value="2" />
         </label>
-        <p class="hint">Invert, flip, and auto-contrast are in the toolbar above.</p>
       </details>
 
       <details class="group" open>
-        <summary class="group-head">3 · Layers</summary>
+        <summary class="group-head">3 · Layers <span class="help" tabindex="0" role="img" aria-label="Layers help" data-tip="Each layer is one spray colour, light → dark. Simplify drops tiny specks and fills small islands so you get a few clean bridges instead of hundreds. Outline strength drives the optional Edge layer (toolbar). Keep highlights (toolbar) protects eyes/nose/teeth.">?</span></summary>
         <label class="row">Layers / colours <span class="out" data-out="layers">2</span>
           <input id="layers" data-param type="range" min="1" max="6" value="2" />
         </label>
@@ -109,15 +108,13 @@
         <label class="row">Simplify <span class="out" data-out="minFeature">6</span>
           <input id="minFeature" data-param type="range" min="0" max="20" value="6" />
         </label>
-        <p class="hint">Higher = cleaner: drops tiny specks and fills small islands, so you get a few clean bridges instead of hundreds.</p>
         <label class="row">Outline strength <span class="out" data-out="edgeAmount">35</span>
           <input id="edgeAmount" data-param type="range" min="0" max="100" value="35" />
         </label>
-        <p class="hint">Turn on <strong>Edge layer</strong> (toolbar) to add a top layer of strong outlines — a subject’s contour, bold creases — that the tonal layers miss; higher = more lines. <strong>Keep highlights</strong> (toolbar) protects eyes/nose/teeth.</p>
       </details>
 
       <details class="group" open>
-        <summary class="group-head">4 · Bridges</summary>
+        <summary class="group-head">4 · Bridges <span class="help" tabindex="0" role="img" aria-label="Bridges help" data-tip="A bridge is a thin sliver of material left uncut to hold a floating piece — the middle of an O, the dot of an i — so it doesn't fall out when cut. SprayCan ties every island automatically, sized to the material and print size. To fine-tune: click a tie to select it, drag a handle or press Delete, or use + Add tie to draw your own.">?</span></summary>
         <label class="row">Material / cut method
           <select id="material" data-param>
             <option value="mylar" selected>Mylar — general (2 mm ties)</option>
@@ -135,20 +132,25 @@
         <label class="row">Bridge width (mm) <span class="out" data-out="bridgeWidth">2</span>
           <input id="bridgeWidth" data-param type="range" min="1" max="15" step="0.5" value="2" />
         </label>
-        <div class="btn-row">
-          <button id="autoBridge" type="button">Auto-bridge</button>
-          <button id="addBridge" type="button">+ Add tie</button>
-          <button id="delBridge" type="button">Delete tie</button>
+        <div class="btn-row icon-row">
+          <button id="autoBridge" type="button" class="icon-btn" data-tip="Auto-bridge — re-tie every island on this layer">
+            <svg class="icn" viewBox="0 0 20 20" aria-hidden="true"><path d="M3 17 L11 9" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/><path d="M14 3l.9 2.1 2.1.9-2.1.9L14 9l-.9-2.1L11 6l2.1-.9z" fill="currentColor"/></svg>
+            <span class="vh">Auto-bridge</span>
+          </button>
+          <button id="addBridge" type="button" class="icon-btn" data-tip="Add tie — click two points to draw a bridge">
+            <svg class="icn" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>
+            <span class="vh">Add tie</span>
+          </button>
+          <button id="delBridge" type="button" class="icon-btn" data-tip="Delete the selected tie">
+            <svg class="icn" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 6h10M8 6V4h4v2M6.5 6l.8 10h5.4l.8-10" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="vh">Delete tie</span>
+          </button>
         </div>
-        <p class="hint">Tiny islands are filled automatically; only the big ones get a tie. Click a tie to select it, then drag its handles or Delete it. Use “+ Add tie” to draw your own. Any island that still floats shows in red.</p>
-        <details class="explain">
-          <summary>What are bridges?</summary>
-          <p>A bridge is a thin sliver of material you leave <em>uncut</em>, to hold a “floating” piece in place — like the middle of an <strong>O</strong> or the dot of an <strong>i</strong>. Without it, that piece falls out the moment you finish cutting. SprayCan finds these islands (shown in red) and ties the big ones automatically; you can move, add, or delete each tie. They’re about the physical cut, not the printing.</p>
-        </details>
+        <p class="hint">Any island that still floats shows in <span style="color:var(--warn)">red</span>.</p>
       </details>
 
       <details class="group" open>
-        <summary class="group-head">5 · Output</summary>
+        <summary class="group-head">5 · Output <span class="help" tabindex="0" role="img" aria-label="Output help" data-tip="Set the real-world width and a page size (used for the PDF cover and as a fallback). Export ▾ (toolbar) gives per-layer SVG cut files for a cutting machine, plus a PDF proof with one page per layer at true size.">?</span></summary>
         <label class="row">Target width
           <span class="size-input">
             <input id="targetWidth" data-param type="number" min="1" step="1" value="30" />
@@ -191,7 +193,6 @@
           </select>
         </label>
         <p class="hint" id="dims">—</p>
-        <p class="hint"><strong>Export ▾</strong> (cut files + PDF) is in the toolbar, top-right.</p>
       </details>
 
       <details class="advanced">
@@ -215,20 +216,25 @@
     </aside>
 
     <section class="stage">
-      <div class="canvas-top">
-        <span class="canvas-title">Editing: <span id="activeLabel">—</span></span>
-        <div class="view-toggle" role="group" aria-label="Canvas view">
-          <button id="viewThis" type="button" class="seg active">This layer</button>
-          <button id="viewAll" type="button" class="seg">All layers</button>
-        </div>
-      </div>
       <div class="canvas-host">
         <div class="canvas-frame">
-          <div class="editor-wrap">
-            <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image or click <strong>Sample</strong> to start.</p>
-            <canvas id="editor" tabindex="0"></canvas>
+          <figure class="src-card" id="srcCard" hidden>
+            <figcaption>Original</figcaption>
+            <canvas id="srcPreview"></canvas>
+          </figure>
+          <div class="canvases">
+            <div class="canvas-card">
+              <h3 class="canvas-h">Editing: <span id="activeLabel">—</span></h3>
+              <div class="editor-wrap">
+                <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image or click <strong>Sample</strong> to start.</p>
+                <canvas id="editor" tabindex="0"></canvas>
+              </div>
+            </div>
+            <div class="canvas-card">
+              <h3 class="canvas-h">Stacked preview</h3>
+              <div class="preview-wrap" id="combined"><p class="empty">No image yet.</p></div>
+            </div>
           </div>
-          <div class="preview-wrap" id="combined"><p class="empty">No image yet.</p></div>
         </div>
       </div>
     </section>

@@ -14,7 +14,7 @@ import { exportPDF as buildPDF } from './exporters/pdf.js';
 import { makeZipBlob } from './exporters/bundle.js';
 import { toHex } from './color.js';
 import { PALETTES, findPaintName, findNearestPaint } from './palettes.js';
-import { readParams, reflectValues, bindControls, renderThresholds } from './ui/controls.js';
+import { readParams, reflectValues, bindControls, renderThresholds, addSteppers } from './ui/controls.js';
 import { renderGuide } from './ui/guide.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
@@ -27,9 +27,9 @@ const els = {
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
   exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
-  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), reset: $('reset'),
+  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'),
   stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
-  viewThis: $('viewThis'), viewAll: $('viewAll'),
+  srcPreview: $('srcPreview'), srcCard: $('srcCard'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
 };
 
@@ -238,6 +238,7 @@ function refreshUI() {
   }
   updateCombined();
   updateDims();
+  renderSource();
   setExportsEnabled(state.layers.length > 0);
   els.editorEmpty.style.display = state.layers.length ? 'none' : 'block';
 }
@@ -260,12 +261,28 @@ function updateDims() {
 
 function setExportsEnabled(on) { [els.exportSvg, els.exportPdf, els.exportBtn].forEach(b => { if (b) b.disabled = !on; }); }
 
-// Canvas view toggle (This layer / All layers), zoom, and the Export ▾ menu.
-function setView(all) {
-  els.stage.classList.toggle('view-all', all);
-  els.viewAll.classList.toggle('active', all);
-  els.viewThis.classList.toggle('active', !all);
+// Draw the original uploaded image into the small "Original" preview (pyramid apex).
+function renderSource() {
+  const cv = els.srcPreview, img = state.img;
+  if (!cv) return;
+  if (!img) { if (els.srcCard) els.srcCard.hidden = true; return; }
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const s = Math.min(200 / iw, 150 / ih, 1);
+  cv.width = Math.max(1, Math.round(iw * s));
+  cv.height = Math.max(1, Math.round(ih * s));
+  cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+  if (els.srcCard) els.srcCard.hidden = false;
 }
+
+// Keep the Remove-background toggle button's visual state in sync with its checkbox.
+function syncRemoveBgBtn() {
+  if (!els.removeBgBtn) return;
+  const on = els.removeBg.checked;
+  els.removeBgBtn.classList.toggle('active', on);
+  els.removeBgBtn.setAttribute('aria-pressed', String(on));
+}
+
+// Canvas zoom + the Export ▾ menu.
 let zoom = 1;
 function setZoom(z) {
   zoom = Math.max(0.25, Math.min(4, Math.round(z * 100) / 100));
@@ -371,6 +388,7 @@ function applyDefaults(ids) {
     if (el.type === 'checkbox') el.checked = DEFAULTS[id]; else el.value = DEFAULTS[id];
   });
   reflectValues(els.root);
+  syncRemoveBgBtn();
 }
 function resetToDefaults() {
   applyDefaults(Object.keys(DEFAULTS));
@@ -522,6 +540,9 @@ function init() {
   captureDefaults();
   setExportsEnabled(false);
   bindControls(els.root, { onInput, onChange });
+  els.root.querySelectorAll('input[type=range][data-param]').forEach(addSteppers);
+  // Clicking a section "?" shows its tooltip but must not collapse the section.
+  els.root.querySelectorAll('.help').forEach(h => h.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }));
   buildColorPanel(els.colorPanel, { palettes: PALETTES, onPick: (hex, name) => setColor(state.active, hex, name), onPickFromImage: startEyedrop });
 
   els.file.addEventListener('change', async e => {
@@ -534,6 +555,12 @@ function init() {
   els.sample.addEventListener('click', loadSample);
   els.open.addEventListener('click', () => els.file.click());
   els.reset.addEventListener('click', resetToDefaults);
+  els.removeBgBtn.addEventListener('click', () => {
+    els.removeBg.checked = !els.removeBg.checked;
+    syncRemoveBgBtn();
+    els.removeBg.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  syncRemoveBgBtn();
 
   els.autoBridge.addEventListener('click', () => {
     const layer = state.layers[state.active];
@@ -555,9 +582,6 @@ function init() {
   els.exportSvg.addEventListener('click', exportPerLayer);
   els.exportPdf.addEventListener('click', exportPDF);
 
-  // Canvas view toggle
-  els.viewThis.addEventListener('click', () => setView(false));
-  els.viewAll.addEventListener('click', () => setView(true));
   // Zoom
   els.zoomFit.addEventListener('click', () => setZoom(1));
   els.zoomIn.addEventListener('click', () => setZoom(zoom + 0.25));
