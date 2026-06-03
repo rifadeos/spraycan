@@ -1,3 +1,17 @@
+/* Inter — vendored locally (SIL OFL); keeps the app fully offline. */
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("vendor/fonts/inter-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("vendor/fonts/inter-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("vendor/fonts/inter-latin-600-normal.woff2") format("woff2");
+}
+
 :root {
   /* Asphalt + spray-orange — dark, street/aerosol feel */
   --bg: #16171a;       /* asphalt */
@@ -5,12 +19,12 @@
   --panel-2: #23272d;  /* inputs */
   --line: #2e323a;     /* borders */
   --ink: #f2f0ec;      /* near-white text */
-  --muted: #9aa0a8;    /* secondary text */
+  --muted: #a8aeb6;    /* secondary text */
   --accent: #d9a528;   /* mustard yellow */
   --accent-2: #efc94e; /* light mustard (highlight) */
   --warn: #ff5a52;
   --radius: 10px;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 * { box-sizing: border-box; }
@@ -31,23 +45,54 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 /* ---- control panel ---- */
 .panel {
   background: var(--panel); border-right: 1px solid var(--line);
-  padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+  padding: 0 16px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+  font-size: 14px; line-height: 1.5;
 }
-.field > label, .group legend { font-weight: 600; font-size: 13px; }
-.hint { margin: 6px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
-.group { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; margin: 0; }
-.group legend { padding: 0 6px; color: var(--muted); }
+.group { border: 1px solid var(--line); border-radius: var(--radius); padding: 0 12px 12px; margin: 0; }
+/* Section header that sticks to the top of the panel while you scroll, so you
+   never lose your place. (Restructured from <legend>, which can't be sticky.) */
+.group-head {
+  position: sticky; top: 0; z-index: 2;
+  margin: 0 -12px 10px; padding: 11px 12px;
+  background: var(--panel); color: var(--ink);
+  font-size: 14px; font-weight: 600; letter-spacing: .2px;
+  border-bottom: 1px solid var(--line);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.hint { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 
-input[type=file] { width: 100%; font-size: 12px; margin-top: 6px; color: var(--muted); }
-.row { display: grid; gap: 6px; font-size: 12.5px; margin: 10px 0; color: var(--muted); }
+input[type=file] { width: 100%; font-size: 12.5px; margin-top: 6px; color: var(--muted); }
+.row { display: grid; gap: 6px; font-size: 13px; margin: 11px 0; color: var(--muted); }
 .row:first-of-type { margin-top: 4px; }
 .out { float: right; color: var(--ink); font-variant-numeric: tabular-nums; }
-.check { display: flex; align-items: center; gap: 8px; font-size: 12.5px; margin: 10px 0; color: var(--muted); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 11px 0; color: var(--muted); }
+
+/* Image-transform icon toggles (Adobe-style; hover shows the native tooltip) */
+.icon-toolbar { display: flex; gap: 8px; margin: 12px 0 4px; flex-wrap: wrap; }
+.icon-toggle {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-2); color: var(--muted); cursor: pointer;
+  transition: border-color .12s, background .12s, color .12s;
+}
+.icon-toggle:hover { border-color: var(--accent); color: var(--ink); }
+.icon-toggle .icn { width: 20px; height: 20px; display: block; }
+.icon-toggle input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+.icon-toggle:has(input:checked) { border-color: var(--accent); background: rgba(217, 165, 40, 0.18); color: var(--accent-2); }
+.icon-toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Inline explainer disclosure (e.g. "What are bridges?") */
+.explain { margin-top: 10px; }
+.explain summary { cursor: pointer; font-size: 12px; color: var(--accent-2); list-style: none; }
+.explain summary::-webkit-details-marker { display: none; }
+.explain summary::before { content: "ⓘ "; }
+.explain p { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
 
 input[type=range] { width: 100%; accent-color: var(--accent); }
 select, input[type=number], input[type=text] {
   background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 7px; padding: 7px 8px; font-size: 12.5px;
+  border-radius: 7px; padding: 7px 8px; font-size: 13px;
 }
 .size-input { display: flex; gap: 8px; }
 .size-input input { flex: 1; }
@@ -67,7 +112,7 @@ select, input[type=number], input[type=text] {
 .btn-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 button {
   background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
-  border-radius: 8px; padding: 8px 12px; font-size: 12.5px; cursor: pointer; flex: 1;
+  border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; flex: 1;
   transition: border-color .12s, background .12s;
 }
 button:hover { border-color: var(--accent); }

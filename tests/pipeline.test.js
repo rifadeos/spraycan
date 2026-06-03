@@ -7,12 +7,12 @@ import {
   buildLayers, layerMaskFromThreshold,
 } from '../src/posterize.js';
 import { openArea } from '../src/grid.js';
-import { despeckle, labelComponents, frameBorder } from '../src/morphology.js';
+import { despeckle, labelComponents, frameBorder, dilate, erode, morphOpen, morphClose } from '../src/morphology.js';
 import { findIslands } from '../src/islands.js';
 import { autoBridges, burnBridges, prepareIslands } from '../src/bridges.js';
 import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
-import { PAGE_OPTIONS } from '../src/exporters/pdf.js';
-import { autoLevels, medianFilter, flipHorizontal } from '../src/filters.js';
+import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
+import { autoLevels, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
 
 // --- helpers ---------------------------------------------------------------
@@ -83,6 +83,57 @@ test('layers nest: darker layer OPEN ⊆ lighter layer OPEN', () => {
 });
 
 // --- morphology ------------------------------------------------------------
+
+test('dilate grows a lone pixel into its 3x3 box', () => {
+  const m = art(`
+    .....
+    .....
+    ..#..
+    .....
+    .....`);
+  const d = dilate(m, 1);
+  assert.equal([...d.data].reduce((a, b) => a + b, 0), 9);
+  assert.equal(d.data[2 * 5 + 2], 1);
+});
+
+test('morphOpen removes a lone open speck but keeps a solid block', () => {
+  const speck = art(`
+    .....
+    .....
+    ..#..
+    .....
+    .....`);
+  assert.ok([...morphOpen(speck, 1).data].every(v => v === 0)); // speck erased
+
+  const block = art(`
+    .....
+    .###.
+    .###.
+    .###.
+    .....`);
+  assert.deepEqual([...morphOpen(block, 1).data], [...block.data]); // 3x3 blob preserved
+});
+
+test('morphClose fills a 1px gap in a line', () => {
+  const line = art(`
+    .......
+    .##.##.
+    .......`);
+  const c = morphClose(line, 1);
+  assert.equal(c.data[1 * 7 + 3], 1);            // the gap is now bridged
+  for (let x = 1; x <= 5; x++) assert.equal(c.data[1 * 7 + x], 1);
+});
+
+test('erode shrinks a block and is undone by dilate (close ≈ identity on a blob)', () => {
+  const block = art(`
+    .....
+    .###.
+    .###.
+    .###.
+    .....`);
+  assert.equal([...erode(block, 1).data].reduce((a, b) => a + b, 0), 1); // 3x3 → single core pixel
+  assert.deepEqual([...morphClose(block, 1).data], [...block.data]);     // gaps-none → unchanged
+});
 
 test('despeckle removes a lone open pixel', () => {
   const m = art(`
@@ -176,6 +227,14 @@ test('flipHorizontal mirrors columns and is its own inverse', () => {
   assert.deepEqual([...flipHorizontal(f).data], [...g.data]); // double flip = identity
 });
 
+test('flipVertical mirrors rows and is its own inverse', () => {
+  const g = gray([[1, 2, 3], [4, 5, 6]]);
+  const f = flipVertical(g);
+  assert.equal(f.width, 3); assert.equal(f.height, 2);
+  assert.deepEqual([...f.data], [4, 5, 6, 1, 2, 3]);
+  assert.deepEqual([...flipVertical(f).data], [...g.data]); // double flip = identity
+});
+
 test('page-size table is sane (mm; A-series ascending)', () => {
   assert.deepEqual(PAGE_OPTIONS.a4, [210, 297]);
   for (const [k, v] of Object.entries(PAGE_OPTIONS)) {
@@ -184,6 +243,17 @@ test('page-size table is sane (mm; A-series ascending)', () => {
   const a = ['a6', 'a5', 'a4', 'a3', 'a2', 'a1', 'a0'];
   const area = s => PAGE_OPTIONS[s][0] * PAGE_OPTIONS[s][1];
   for (let i = 1; i < a.length; i++) assert.ok(area(a[i]) > area(a[i - 1]), `${a[i]} > ${a[i - 1]}`);
+});
+
+test('sheetPageSize: true-size custom page when it fits, scaled-to-fit when oversized', () => {
+  const small = sheetPageSize(300, 200, 10, 24, [210, 297]); // fits within A0
+  assert.equal(small.fit, 1);
+  assert.equal(small.pageW, 320);  // 300 + 2*margin
+  assert.equal(small.pageH, 244);  // 200 + 2*margin + extraV(24)
+  const huge = sheetPageSize(1500, 1000, 10, 24, [210, 297]); // exceeds A0 → fallback A4
+  assert.ok(huge.fit < 1);
+  assert.equal(huge.pageW, 210);
+  assert.equal(huge.pageH, 297);
 });
 
 test('findNearestPaint returns a real can', () => {

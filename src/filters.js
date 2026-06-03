@@ -33,6 +33,17 @@ export function flipHorizontal(gray) {
   return { width: W, height: H, data: out };
 }
 
+// Mirror a grayscale buffer vertically (top/bottom).
+export function flipVertical(gray) {
+  const { width: W, height: H, data } = gray;
+  const out = new Uint8ClampedArray(W * H);
+  for (let y = 0; y < H; y++) {
+    const src = y * W, dst = (H - 1 - y) * W;
+    for (let x = 0; x < W; x++) out[dst + x] = data[src + x];
+  }
+  return { width: W, height: H, data: out };
+}
+
 // Median filter — edge-preserving despeckle that turns noisy texture (fur,
 // grass) into cleaner shapes without blurring boundaries. radius in pixels.
 export function medianFilter(gray, radius) {

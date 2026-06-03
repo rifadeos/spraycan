@@ -2,7 +2,7 @@
 
 import { fileToImage, imageToGray } from './image.js';
 import { autoThresholds, buildLayers } from './posterize.js';
-import { despeckle, frameBorder } from './morphology.js';
+import { despeckle, frameBorder, removeSmallComponents, dilate, morphClose } from './morphology.js';
 import { edgeMask } from './edges.js';
 import { findIslands } from './islands.js';
 import { autoBridges, burnBridges, prepareIslands } from './bridges.js';
@@ -10,7 +10,7 @@ import { traceMaskToPaths } from './trace.js';
 import { physicalSize, toMm } from './units.js';
 import { cornerMarks } from './registration.js';
 import { layerToSVG, combinedSVG } from './exporters/svg.js';
-import { exportTiledPDF } from './exporters/pdf.js';
+import { exportPDF as buildPDF } from './exporters/pdf.js';
 import { makeZipBlob } from './exporters/bundle.js';
 import { toHex } from './color.js';
 import { PALETTES, findPaintName, findNearestPaint } from './palettes.js';
@@ -25,7 +25,7 @@ const els = {
   layers: $('layers'), minFeature: $('minFeature'), bridgeWidth: $('bridgeWidth'),
   targetWidth: $('targetWidth'), unit: $('unit'),
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
-  exportSvg: $('exportSvg'), exportCombined: $('exportCombined'), exportPdf: $('exportPdf'),
+  exportSvg: $('exportSvg'), exportPdf: $('exportPdf'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), reset: $('reset'),
 };
@@ -80,7 +80,7 @@ function reGray() {
   const src = (p.removeBg && state.processedImg) ? state.processedImg : state.img;
   state.gray = imageToGray(src, {
     maxResolution: p.maxResolution, brightness: p.brightness * 1.2, contrast: p.contrast * 2,
-    invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror,
+    invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip,
   });
   if (!p.thresholds || !p.thresholds.length) p.thresholds = autoThresholds(state.gray, p.layers);
   buildSampleData(src);
@@ -105,6 +105,7 @@ function sampleImageColor(x, y) {
   const d = state.sampleData;
   if (!d) return null;
   if (state.params && state.params.mirror) x = d.width - 1 - x; // sampleData is un-mirrored
+  if (state.params && state.params.vflip) y = d.height - 1 - y;  // …and un-flipped vertically
   const ix = Math.max(0, Math.min(d.width - 1, Math.round(x)));
   const iy = Math.max(0, Math.min(d.height - 1, Math.round(y)));
   const i = (iy * d.width + ix) * 4;
@@ -160,9 +161,17 @@ async function recomputeAll() {
     const tonalN = state.layers.length;
     // Optional edge/line-detail layer: outlines + texture as the top (sprayed-last) layer.
     if (p.edges) {
-      busy('Tracing edges…'); await raf();
-      let em = edgeMask(state.gray, { amount: p.edgeAmount });
-      em = despeckle(em, 6); // drop tiny edge specks — keeps it cuttable and the trace fast
+      busy('Tracing outlines…'); await raf();
+      // Strong outlines only — kill the speckle photos used to produce. Work on the
+      // thin (un-dilated) edge map so component size = contour length: drop short
+      // isolated runs, then thicken + close gaps into clean, cuttable contours.
+      const px = state.gray.width * state.gray.height;
+      const edgeMin = Math.max(40, Math.round(px * 0.00012)); // resolution-scaled floor
+      let em = edgeMask(state.gray, { amount: p.edgeAmount, dilate: 0 });
+      em = removeSmallComponents(em, 1, edgeMin); // keep only sizeable contours, drop dots
+      em = dilate(em, 1);                         // restore a cuttable stroke width
+      em = morphClose(em, 1);                     // bridge small gaps in the outlines
+      em = despeckle(em, edgeMin);                // final tidy (open specks + material slivers)
       const baseMask = frameBorder(em, border);
       // Edge lines ARE the design: no island fill / bridging (would solid-fill the gaps).
       const layer = { order: state.layers.length, threshold: -1, isEdge: true, baseMask, bridges: [], workMask: null, floatingMask: null, traced: null };
@@ -237,10 +246,11 @@ function updateCombined() {
 function updateDims() {
   if (!state.gray) { els.dims.textContent = '—'; return; }
   const d = dims();
-  els.dims.textContent = `≈ ${Math.round(d.widthMm)} × ${Math.round(d.heightMm)} mm  ·  working ${state.gray.width}×${state.gray.height}px`;
+  const inW = d.widthMm / 25.4, inH = d.heightMm / 25.4;
+  els.dims.textContent = `True size: ${Math.round(d.widthMm)} × ${Math.round(d.heightMm)} mm (≈ ${inW.toFixed(1)} × ${inH.toFixed(1)} in)  ·  working ${state.gray.width}×${state.gray.height}px`;
 }
 
-function setExportsEnabled(on) { [els.exportSvg, els.exportCombined, els.exportPdf].forEach(b => { b.disabled = !on; }); }
+function setExportsEnabled(on) { [els.exportSvg, els.exportPdf].forEach(b => { b.disabled = !on; }); }
 
 function setActive(i) {
   state.active = i;
@@ -323,7 +333,7 @@ function mergeParams() {
 // Control defaults captured from the HTML at startup, for "Reset to defaults"
 // and for giving each newly-loaded image a clean look-baseline.
 const DEFAULTS = {};
-const LOOK_IDS = ['brightness', 'contrast', 'smooth', 'detail', 'invert', 'autoLevels', 'mirror', 'layers', 'minFeature', 'keepHighlights', 'edges', 'edgeAmount', 'removeBg'];
+const LOOK_IDS = ['brightness', 'contrast', 'smooth', 'detail', 'invert', 'autoLevels', 'mirror', 'vflip', 'layers', 'minFeature', 'keepHighlights', 'edges', 'edgeAmount', 'removeBg'];
 function captureDefaults() {
   els.root.querySelectorAll('[data-param]').forEach(el => { DEFAULTS[el.id] = (el.type === 'checkbox') ? el.checked : el.value; });
 }
@@ -356,7 +366,7 @@ function onChange(el) {
   if (!state.img) return;
   switch (el.id) {
     case 'brightness': case 'contrast': case 'invert': case 'maxResolution':
-    case 'smooth': case 'autoLevels': case 'mirror':
+    case 'smooth': case 'autoLevels': case 'mirror': case 'vflip':
       reGray(); recomputeAll(); break;
     case 'layers':
       state.params.thresholds = autoThresholds(state.gray, state.params.layers);
@@ -441,16 +451,11 @@ async function exportPerLayer() {
   } catch (e) { console.error(e); fail('SVG export failed: ' + e.message); }
 }
 
-function exportPreview() {
-  if (!state.layers.length) return;
-  download('stencil-preview.svg', combinedSVG(state.layers.map(l => l.traced), dims(), { colors: state.colors, marks: marks() }));
-}
-
 async function exportPDF() {
   if (!state.layers.length) return;
   busy('Building PDF (this can take a moment)…'); await raf();
   try {
-    const pdf = await exportTiledPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin, overlap: state.params.overlap });
+    const pdf = await buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, pdfMode: state.params.pdfMode, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin, overlap: state.params.overlap });
     pdf.save('stencil.pdf');
     ready('PDF exported.');
   } catch (e) { console.error(e); fail('PDF export failed: ' + e.message); }
@@ -520,7 +525,6 @@ function init() {
   els.delBridge.addEventListener('click', () => editor.removeSelected());
 
   els.exportSvg.addEventListener('click', exportPerLayer);
-  els.exportCombined.addEventListener('click', exportPreview);
   els.exportPdf.addEventListener('click', exportPDF);
 
   document.addEventListener('keydown', e => {
@@ -540,5 +544,5 @@ window.__sf = {
   get state() { return state; },
   get editor() { return editor; },
   bridgeWidthPx,
-  buildPDF: () => exportTiledPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin, overlap: state.params.overlap }),
+  buildPDF: (mode) => buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, pdfMode: mode || state.params.pdfMode, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin, overlap: state.params.overlap }),
 };

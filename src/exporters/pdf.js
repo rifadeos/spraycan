@@ -31,6 +31,24 @@ const PAGE_LABELS = {
 
 export const PAGE_OPTIONS = PAGES; // exported for tests / UI
 
+// Largest custom page we'll emit at true 1:1 size (A0). Bigger designs fall
+// back to the selected page, scaled to fit (with a ruler + true-size label).
+export const MAX_PAGE_MM = [841, 1189];
+
+// Pure: pick the per-layer page for "sheet" mode. `extraV` = vertical chrome
+// (label band + ruler band) added on top of the artwork. Returns the page size
+// and a `fit` scale (1 = true 1:1 custom page; <1 = scaled into the fallback).
+export function sheetPageSize(designW, designH, margin, extraV, fallback, max = MAX_PAGE_MM) {
+  const padW = designW + 2 * margin;
+  const padH = designH + 2 * margin + extraV;
+  const [maxShort, maxLong] = max;
+  const fitsCustom = Math.min(padW, padH) <= maxShort && Math.max(padW, padH) <= maxLong;
+  if (fitsCustom) return { pageW: padW, pageH: padH, fit: 1 };
+  const [fW, fH] = fallback;
+  const fit = Math.min((fW - 2 * margin) / designW, (fH - 2 * margin - extraV) / designH);
+  return { pageW: fW, pageH: fH, fit };
+}
+
 function parseSVG(str) {
   return new DOMParser().parseFromString(str.replace(/^<\?xml[^>]*\?>\s*/, ''), 'image/svg+xml').documentElement;
 }
@@ -100,7 +118,8 @@ async function coverPage(pdf, info) {
 
   pdf.setTextColor(20); pdf.setFontSize(18); pdf.text('SprayCan — cut & spray kit', margin, y); y += 8;
   pdf.setFontSize(10); pdf.setTextColor(90);
-  pdf.text(`Final size ${Math.round(designW)} × ${Math.round(designH)} mm · ${layers.length} layer(s) · ${pageLabel} · ${cols}×${rows} page(s) per layer`, margin, y);
+  const perLayer = (cols * rows > 1) ? `${cols}×${rows} pages per layer (tiled)` : 'one page per layer';
+  pdf.text(`Final size ${Math.round(designW)} × ${Math.round(designH)} mm · ${layers.length} layer(s) · ${pageLabel} · ${perLayer}`, margin, y);
   y += 9;
 
   // Stacked-result preview (top-right)
@@ -190,4 +209,52 @@ export async function exportTiledPDF(layers, colors, dims, opts = {}) {
     }
   }
   return pdf;
+}
+
+// "Sheet" mode: a proof cover, then ONE page per layer. Each layer page is sized
+// to the design's true mm (prints 1:1) when it fits within A0; oversized designs
+// are scaled onto the selected page with a ruler + true-size label. This is the
+// format to hand a print/cut shop.
+export async function exportSheetPDF(layers, colors, dims, opts = {}) {
+  if (!window.jspdf) throw new Error('jsPDF not loaded');
+  const { jsPDF } = window.jspdf;
+  const pageKey = PAGES[opts.pageSize] ? opts.pageSize : 'a4';
+  const [coverW, coverH] = PAGES[pageKey];
+  const margin = Math.max(3, opts.margin ?? 10);
+  const designW = dims.widthMm, designH = dims.heightMm;
+  const colorLabels = opts.colorLabels || [];
+  const marks = opts.marks || [];
+  const titleBand = 10, footBand = 14, extraV = titleBand + footBand;
+
+  const pdf = new jsPDF({ unit: 'mm', format: [coverW, coverH], orientation: coverW > coverH ? 'landscape' : 'portrait' });
+  await coverPage(pdf, {
+    margin, designW, designH, layers, colors, colorLabels,
+    cols: 1, rows: 1, pageLabel: PAGE_LABELS[pageKey] || pageKey, marks,
+  });
+
+  for (let li = 0; li < layers.length; li++) {
+    const { pageW, pageH, fit } = sheetPageSize(designW, designH, margin, extraV, [coverW, coverH]);
+    pdf.addPage([pageW, pageH], pageW > pageH ? 'landscape' : 'portrait');
+    const boxW = designW * fit, boxH = designH * fit;
+    const x = (pageW - boxW) / 2, y = margin + titleBand;
+    const traced = layers[li].traced;
+    const el = tileSVGElement(traced, colors[li] || '#111111', marks, { x: 0, y: 0, w: traced.width, h: traced.height });
+    await renderSVG(pdf, el, { x, y, width: boxW, height: boxH });
+    cropMarks(pdf, x, y, boxW, boxH);
+    pdf.setFontSize(9); pdf.setTextColor(60);
+    const label = colorLabels[li] || colors[li] || '#111111';
+    const note = fit === 1
+      ? `cut at ${Math.round(designW)} × ${Math.round(designH)} mm (1:1)`
+      : `scaled to fit — true size ${Math.round(designW)} × ${Math.round(designH)} mm`;
+    pdf.text(`Layer ${li + 1} of ${layers.length} · ${label} · ${note}`, margin, margin + 5);
+    scaleBar(pdf, x, y + boxH + 6, Math.max(20, Math.min(100, Math.round(boxW))));
+  }
+  return pdf;
+}
+
+// Dispatcher: choose the layout. Default 'sheet' (one layer per page).
+export async function exportPDF(layers, colors, dims, opts = {}) {
+  return (opts.pdfMode === 'tiled')
+    ? exportTiledPDF(layers, colors, dims, opts)
+    : exportSheetPDF(layers, colors, dims, opts);
 }

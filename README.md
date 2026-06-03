@@ -14,7 +14,9 @@ No server, no upload, no build step. Your image never leaves your device.
 - **Detects floating islands** (the middle of an *O*, the catch-light in an eye, …) and
   **auto-bridges** them so they stay attached when cut. Bridges are editable: drag, add, delete.
 - Adds a **material holding frame** and **registration marks** so multi-layer stencils line up.
-- Exports a **ZIP of per-layer SVGs** (+ a stacked preview) and a **tiled PDF** with a cut guide.
+- Exports a **ZIP of per-layer cut files** (one SVG per layer + a stacked preview) and a **PDF**:
+  *one layer per page at true size* (for a print/cut shop) by default, or a *real-scale tiled* version
+  (print at home and tape together) — your choice in the Output panel.
 
 ## Run it
 
@@ -35,7 +37,8 @@ Click **Try a sample image** to see it work immediately, or load your own.
 3. **Layers** — pick 1–4. Each layer is one spray colour; tune the per-tone sliders.
 4. **Bridges** — red areas are islands that would fall out. They're auto-tied; drag the green
    handles to fine-tune, click **+ Add** to draw a tie, select one and **Delete** to remove it.
-5. **Output** — set the real-world width, then **Export SVG (.zip)** or **Export PDF**.
+5. **Output** — set the real-world width, pick a **PDF layout** (one-layer-per-page or tiled), then
+   **Export cut files (.zip)** or **Export PDF**.
 
 For a multi-layer piece: cut each layer sheet, keep the bridges, align the sheets with the red
 crosshairs, and spray the **lightest layer first**, each darker layer on top.

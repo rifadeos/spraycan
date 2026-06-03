@@ -13,12 +13,14 @@ export function readParams(root) {
     targetWidth: +g('targetWidth').value,
     unit: g('unit').value,
     pageSize: g('pageSize').value,
+    pdfMode: g('pdfMode').value,          // 'sheet' (one layer/page) | 'tiled'
     margin: +g('margin').value,           // mm (PDF)
     overlap: +g('overlap').value,         // mm (PDF tiling)
     brightness: +g('brightness').value,
     contrast: +g('contrast').value,
     invert: g('invert').checked,
     mirror: g('mirror').checked,
+    vflip: g('vflip').checked,
     smooth: +g('smooth').value,
     detail: +g('detail').value,
     autoLevels: g('autoLevels').checked,

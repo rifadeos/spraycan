@@ -1,7 +1,7 @@
 // Connected-component labelling and small-feature removal (despeckle).
 // Pure functions over masks — no DOM, fully unit-testable.
 
-import { cloneMask } from './grid.js';
+import { cloneMask, makeMask } from './grid.js';
 
 // 4-connected labelling of all pixels equal to `value`.
 // Returns { labels: Int32Array, sizes: number[] (sizes[label]=area), count }.
@@ -54,6 +54,52 @@ export function despeckle(mask, minArea) {
   m = removeSmallComponents(m, 0, minArea);        // drop tiny material slivers
   return m;
 }
+
+// --- binary morphology (OPEN=1 / MATERIAL=0), square structuring element ----
+// Grow the OPEN region by radius r (out-of-bounds treated as MATERIAL).
+export function dilate(mask, r = 1) {
+  const { width: W, height: H, data } = mask;
+  if (r <= 0) return cloneMask(mask);
+  const out = makeMask(W, H, 0);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!data[y * W + x]) continue;
+      for (let dy = -r; dy <= r; dy++) {
+        const ny = y + dy; if (ny < 0 || ny >= H) continue;
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = x + dx; if (nx < 0 || nx >= W) continue;
+          out.data[ny * W + nx] = 1;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// Shrink the OPEN region by radius r (a pixel survives only if its whole r-box
+// is OPEN; out-of-bounds counts as MATERIAL, so borders erode).
+export function erode(mask, r = 1) {
+  const { width: W, height: H, data } = mask;
+  if (r <= 0) return cloneMask(mask);
+  const out = makeMask(W, H, 0);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (!data[y * W + x]) continue;
+      let keep = 1;
+      for (let dy = -r; dy <= r && keep; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || !data[ny * W + nx]) { keep = 0; break; }
+        }
+      }
+      out.data[y * W + x] = keep;
+    }
+  }
+  return out;
+}
+
+export function morphOpen(mask, r = 1) { return dilate(erode(mask, r), r); }   // removes thin specks/spurs
+export function morphClose(mask, r = 1) { return erode(dilate(mask, r), r); }  // bridges small gaps
 
 // Force a MATERIAL border around the mask. This is the stencil's holding frame:
 // it guarantees a connected sheet edge so islands always have something to
