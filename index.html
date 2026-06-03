@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SprayCan — image → cuttable spray stencil</title>
-  <meta name="description" content="SprayCan turns any image into a layered, cuttable spray-paint stencil — sized to print, ready to cut and spray. The core conversion runs entirely in your browser; optional cloud features (background removal, AI simplify) need internet." />
+  <meta name="description" content="SprayCan turns any image into a layered, cuttable spray-paint stencil — sized to print, ready to cut and spray. Runs in your browser: Auto recognises the image with a small on-device AI model and background removal runs on-device too (models download once; your image is never uploaded)." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -78,7 +78,7 @@
   <main class="app" id="root">
     <aside class="panel">
       <details class="group">
-        <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto picks the best fit per image; switch it or tweak the sliders from there. The core conversion runs locally; the optional Remove background and AI simplify use the internet.">?</span></summary>
+        <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto recognises the image with a small on-device AI model (downloaded once) and picks the best fit; switch it or tweak the sliders. Everything runs on your device — your image is never uploaded.">?</span></summary>
         <label class="row">Preset
           <select id="preset" data-param>
             <option value="auto" selected>Auto (pick per image)</option>

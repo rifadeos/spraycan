@@ -115,3 +115,16 @@ export function pickPreset(stats) {
   if (sky >= 0.40 || green >= 0.32) return 'landscape';
   return 'subject';
 }
+
+// Combine on-device ML signals (face / scene / recognised-object) with the cheap
+// tone stats into a preset. Pure + testable. ML wins where it's strong (a sizeable
+// face → portrait; an outdoor scene → landscape); a flat high-contrast graphic →
+// logo; a recognised object → isolate it; and with no ML it defers to the colour
+// heuristic (pickPreset) so Auto still works offline.
+export function presetFromSignals(sig = {}) {
+  if (sig.faces > 0 && sig.faceArea >= 0.045) return 'portrait';
+  if (sig.scene) return 'landscape';
+  if ((sig.toneCount ?? 99) <= 6 && (sig.std ?? 0) > 55) return 'logo';
+  if (sig.hasObject) return 'subject';
+  return pickPreset(sig);
+}

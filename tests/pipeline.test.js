@@ -14,7 +14,7 @@ import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
 import { autoLevels, clahe, bilateralFilter, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
-import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor } from '../src/presets.js';
+import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor, presetFromSignals } from '../src/presets.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -312,6 +312,16 @@ test('pickPreset priority: face > logo > landscape > subject', () => {
 test('landscape preset keeps the whole image (no isolate) with rich tones', () => {
   assert.equal(PRESETS.landscape.params.removeBg, false);
   assert.ok(PRESETS.landscape.params.layers >= 5);
+});
+
+test('presetFromSignals combines ML signals (face/scene/object) with tone stats', () => {
+  assert.equal(presetFromSignals({ faces: 1, faceArea: 0.10 }), 'portrait');             // sizeable face
+  assert.equal(presetFromSignals({ faces: 1, faceArea: 0.01, hasObject: true }), 'subject'); // tiny face → not a portrait
+  assert.equal(presetFromSignals({ scene: true }), 'landscape');                          // recognised outdoor scene
+  assert.equal(presetFromSignals({ toneCount: 4, std: 70 }), 'logo');                     // flat high-contrast graphic
+  assert.equal(presetFromSignals({ hasObject: true }), 'subject');                        // recognised object → isolate
+  assert.equal(presetFromSignals({ skinFraction: 0.2 }), 'portrait');                     // no ML → colour heuristic still routes
+  assert.equal(presetFromSignals({}), 'subject');                                         // nothing → safe default
 });
 
 test('every preset only references real control ids', () => {

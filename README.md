@@ -5,10 +5,11 @@ Upload a photo, choose how many colour layers you want, let it auto-place the *b
 keep islands from falling out, then export clean **SVG** files (for a cutting machine) or a
 **PDF proof** (one page per layer at true size, for a print/cut shop).
 
-No build step and no account. The **core conversion runs entirely in your browser** — your image
-isn't uploaded for it. Two *optional* features reach the internet only when you switch them on:
-**Remove background** downloads a small model on first use (then runs locally), and **AI simplify**
-sends your image to Google's Gemini API using your own key.
+No build step and no account. **Everything runs in your browser — your image is never uploaded.**
+"Auto" recognises the image with small **on-device** models (BlazeFace for faces + MobileNet for
+content, via TensorFlow.js) to pick the best preset, and **Remove background** uses an on-device
+model too. Those models download once from a CDN (then the browser caches them), so they need
+internet the first time — but the image itself never leaves your device.
 
 ## What it does
 

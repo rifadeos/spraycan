@@ -17,7 +17,7 @@ import { toHex } from './color.js';
 import { PALETTES, findPaintName, findNearestPaint } from './palettes.js';
 import { readParams, reflectValues, bindControls, renderThresholds, addSteppers } from './ui/controls.js';
 import { renderGuide } from './ui/guide.js';
-import { PRESETS, imageStats, pickPreset, analyzeColor } from './presets.js';
+import { PRESETS, imageStats, pickPreset, analyzeColor, presetFromSignals } from './presets.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
 
@@ -515,15 +515,31 @@ async function applyPreset(id) {
 
 // Resolve the preset to apply for the current image: an explicit choice, or
 // auto-pick from a quick neutral probe of the image when the select is on "Auto".
-function presetForImage(img) {
+async function pickPresetForImage(img) {
   const sel = els.preset ? els.preset.value : 'auto';
   if (sel !== 'auto') { if (els.preset) els.preset.title = ''; return sel; }
+  // Cheap colour/tone stats are always available (logo signal + offline fallback).
   const probe = imageToGray(img, { maxResolution: 360, autoLevels: false, smooth: 0 });
   const aspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height || 1);
   const stats = imageStats(probe, aspect);
   Object.assign(stats, colorStatsForImage(img, 360)); // skin / sky / foliage / saturation
+  // Prefer on-device ML recognition (generalises to any image); fall back to the heuristic.
+  try {
+    const { classifyImage } = await import('./classify.js');
+    busy('Analysing image (first run downloads a small model)…');
+    const ml = await classifyImage(img);
+    if (ml) {
+      const id = presetFromSignals({ ...stats, faces: ml.faces, faceArea: ml.faceArea, scene: ml.scene, hasObject: ml.hasObject });
+      const why = (ml.faces > 0 && ml.faceArea >= 0.045) ? 'face detected'
+        : ml.scene ? (ml.sceneName || 'scene')
+        : (id === 'subject' && ml.top && ml.top[0]) ? (ml.top[0].className || '').split(',')[0]
+        : '';
+      if (els.preset) els.preset.title = 'AI: ' + (PRESETS[id]?.label || id) + (why ? ` — ${why}` : '');
+      return id;
+    }
+  } catch (e) { console.warn('Auto (AI) recognition unavailable — using the colour heuristic:', e); }
   const id = pickPreset(stats);
-  if (els.preset) els.preset.title = 'Auto-picked: ' + (PRESETS[id]?.label || id);
+  if (els.preset) els.preset.title = 'Auto: ' + (PRESETS[id]?.label || id);
   return id;
 }
 
@@ -599,7 +615,7 @@ async function onChange(el) {
         await recomputeAll(); break;
       }
       case 'preset':
-        await applyPreset(presetForImage(state.img)); break;
+        await applyPreset(await pickPresetForImage(state.img)); break;
       case 'removeBg':
         await toggleBackground(); break;
       case 'bridgeWidth':
@@ -668,7 +684,7 @@ async function useImage(img) {
   state.colors = []; state.colorNames = [];  // …and fresh default colours (don't carry the last image's)
   // Start from a tuned preset (auto-picked per image, or the user's explicit choice)
   // so the upload looks near-finished instead of starting from a generic default.
-  await applyPreset(presetForImage(img));
+  await applyPreset(await pickPresetForImage(img));
 }
 
 // A built-in demo (concentric tones + enclosed islands) so the tool can be

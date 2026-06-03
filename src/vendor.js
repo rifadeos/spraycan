@@ -5,7 +5,7 @@
 
 const cache = new Map();
 
-function loadScript(src) {
+export function loadScript(src) {
   if (cache.has(src)) return cache.get(src);
   const p = new Promise((resolve, reject) => {
     const s = document.createElement('script');
