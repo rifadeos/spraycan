@@ -54,17 +54,17 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 /* ---- control panel ---- */
 .panel {
   background: var(--panel); border-right: 1px solid var(--line);
-  padding: 0 16px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
-  font-size: 14px; line-height: 1.5;
+  padding: 0 14px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;
+  font-size: 14px; line-height: 1.45;
 }
-.group { border: 1px solid var(--line); border-radius: var(--radius); padding: 0 12px 12px; margin: 0; }
+.group { border: 1px solid var(--line); border-radius: var(--radius); padding: 0 12px 10px; margin: 0; }
 .group:not([open]) { padding-bottom: 0; }
 /* Collapsible section header that also sticks to the top while the panel scrolls. */
 .group-head {
   position: sticky; top: 0; z-index: 2;
-  margin: 0 -12px 10px; padding: 11px 12px;
+  margin: 0 -12px 8px; padding: 9px 12px;
   background: var(--panel); color: var(--ink);
-  font-size: 14px; font-weight: 600; letter-spacing: .2px;
+  font-size: 13.5px; font-weight: 600; letter-spacing: .2px;
   border-bottom: 1px solid var(--line);
   border-radius: var(--radius) var(--radius) 0 0;
   cursor: pointer; list-style: none; display: flex; align-items: center; gap: 7px;
@@ -77,9 +77,13 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 .hint { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
 
 input[type=file] { width: 100%; font-size: 12.5px; margin-top: 6px; color: var(--muted); }
-.row { display: grid; gap: 6px; font-size: 13px; margin: 11px 0; color: var(--muted); }
-.row:first-of-type { margin-top: 4px; }
-.out { float: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+/* Compact one-line control rows: label · control · value */
+.row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 7px 0; color: var(--muted); }
+.row:first-of-type { margin-top: 2px; }
+.row > select, .row > .size-input { order: 2; flex: 1 1 auto; min-width: 0; }
+.out { order: 3; color: var(--ink); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+input.out { width: 50px; padding: 4px 6px; text-align: right; }
+input.out::-webkit-inner-spin-button, input.out::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 11px 0; color: var(--muted); }
 
 /* Image-transform icon toggles (Adobe-style; hover shows the native tooltip) */
@@ -153,7 +157,7 @@ input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: 
 input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 1px solid rgba(0,0,0,.4); cursor: pointer; }
 input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 /* − / + steppers around each slider */
-.range-wrap { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+.range-wrap { order: 2; flex: 1 1 auto; min-width: 90px; display: flex; align-items: center; gap: 6px; margin: 0; }
 .range-wrap input[type=range] { margin: 0; }
 .step { flex: 0 0 auto; width: 26px; height: 26px; padding: 0; font-size: 15px; line-height: 1; border-radius: 6px; color: var(--muted); }
 .step:hover { color: var(--ink); }
@@ -275,5 +279,5 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 #editor { max-width: 100%; max-height: 100%; width: auto; height: auto; cursor: crosshair; touch-action: none; display: block; }
 #editor:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
 .preview-wrap svg { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
-.empty, .editor-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 16px; }
-.editor-empty strong { display: block; color: var(--ink); font-size: 14px; margin-bottom: 4px; }
+.empty, .editor-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 20px; margin: 0 auto; max-width: 80%; }
+.empty strong, .editor-empty strong { display: block; color: var(--ink); font-size: 14px; margin-bottom: 4px; }

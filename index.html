@@ -94,7 +94,7 @@
         <input id="removeBg" data-param type="checkbox" class="vh" />
       </details>
 
-      <details class="group" open>
+      <details class="group">
         <summary class="group-head">2 · Adjust <span class="help" tabindex="0" role="img" aria-label="Adjust help" data-tip="Tune brightness, contrast, smoothing and line detail until the shapes read clearly. Invert, flip and auto-contrast live in the toolbar above.">?</span></summary>
         <label class="row">Brightness <span class="out" data-out="brightness">0</span>
           <input id="brightness" data-param type="range" min="-100" max="100" value="0" />
@@ -110,7 +110,7 @@
         </label>
       </details>
 
-      <details class="group" open>
+      <details class="group">
         <summary class="group-head">3 · Layers <span class="help" tabindex="0" role="img" aria-label="Layers help" data-tip="Each layer is one spray colour, light → dark. Simplify drops tiny specks and fills small islands so you get a few clean bridges instead of hundreds. Outline strength drives the optional Edge layer (toolbar). Keep highlights (toolbar) protects eyes/nose/teeth.">?</span></summary>
         <label class="row">Layers / colours <span class="out" data-out="layers">2</span>
           <input id="layers" data-param type="range" min="1" max="6" value="2" />
@@ -124,7 +124,7 @@
         </label>
       </details>
 
-      <details class="group" open>
+      <details class="group">
         <summary class="group-head">4 · Bridges <span class="help" tabindex="0" role="img" aria-label="Bridges help" data-tip="A bridge is a thin sliver of material left uncut to hold a floating piece — the middle of an O, the dot of an i — so it doesn't fall out when cut. SprayCan ties every island automatically, sized to the material and print size. To fine-tune: click a tie to select it, drag a handle or press Delete, or use + Add tie to draw your own.">?</span></summary>
         <label class="row">Material / cut method
           <select id="material" data-param>
@@ -160,7 +160,7 @@
         <p class="hint">Any island that still floats shows in <span style="color:var(--warn)">red</span>.</p>
       </details>
 
-      <details class="group" open>
+      <details class="group">
         <summary class="group-head">5 · Output <span class="help" tabindex="0" role="img" aria-label="Output help" data-tip="Set the real-world width and a page size (used for the PDF cover and as a fallback). Export ▾ (toolbar) gives per-layer SVG cut files for a cutting machine, plus a PDF proof with one page per layer at true size.">?</span></summary>
         <label class="row">Target width
           <span class="size-input">
@@ -238,13 +238,13 @@
             <div class="canvas-card">
               <h3 class="canvas-h">Editing: <span id="activeLabel">—</span></h3>
               <div class="editor-wrap">
-                <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image or click <strong>Sample</strong> to start.</p>
+                <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image or click Sample to start.</p>
                 <canvas id="editor" tabindex="0"></canvas>
               </div>
             </div>
             <div class="canvas-card">
               <h3 class="canvas-h">Stacked preview</h3>
-              <div class="preview-wrap" id="combined"><p class="empty">No image yet.</p></div>
+              <div class="preview-wrap" id="combined"><p class="empty"><strong>No image yet</strong>The stacked result appears here.</p></div>
             </div>
           </div>
         </div>

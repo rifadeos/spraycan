@@ -35,7 +35,9 @@ export function readParams(root) {
 export function reflectValues(root) {
   root.querySelectorAll('input[type=range][data-param]').forEach(el => {
     const out = root.querySelector(`[data-out="${el.id}"]`);
-    if (out) out.textContent = el.value;
+    if (!out) return;
+    if (out.tagName === 'INPUT') { if (out !== document.activeElement) out.value = el.value; }
+    else out.textContent = el.value;
   });
 }
 
@@ -68,6 +70,24 @@ export function addSteppers(range) {
   wrap.className = 'range-wrap';
   range.replaceWith(wrap);
   wrap.append(mk('−', -1), range, mk('+', 1));
+
+  // Make the value readout an editable number field — type a value or clear to 0.
+  const out = document.querySelector(`[data-out="${range.id}"]`);
+  if (out && out.tagName !== 'INPUT') {
+    const num = document.createElement('input');
+    num.type = 'number'; num.className = out.className; num.setAttribute('data-out', range.id);
+    num.min = range.min; num.max = range.max; num.step = range.step || '1'; num.value = range.value;
+    out.replaceWith(num);
+    const commit = () => {
+      let v = +num.value; if (Number.isNaN(v)) v = +range.min || 0;
+      v = Math.max(+range.min, Math.min(+range.max, v));
+      num.value = String(v); range.value = String(v);
+      range.dispatchEvent(new Event('input', { bubbles: true }));
+      range.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    num.addEventListener('change', commit);
+    num.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); commit(); num.blur(); } });
+  }
 }
 
 // Dynamic per-tone threshold sliders (count follows the layer count).

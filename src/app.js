@@ -576,6 +576,13 @@ function init() {
   els.root.querySelectorAll('input[type=range][data-param]').forEach(addSteppers);
   // Clicking a section "?" shows its tooltip but must not collapse the section.
   els.root.querySelectorAll('.help').forEach(h => h.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }));
+  // Single-open accordion: expanding a section collapses the others (less scrolling).
+  els.root.querySelectorAll('details.group').forEach(d => {
+    d.addEventListener('toggle', () => {
+      if (!d.open) return;
+      els.root.querySelectorAll('details.group[open]').forEach(o => { if (o !== d) o.open = false; });
+    });
+  });
   buildColorPanel(els.colorPanel, { palettes: PALETTES, onPick: (hex, name) => setColor(state.active, hex, name), onPickFromImage: startEyedrop });
 
   els.file.addEventListener('change', async e => {
