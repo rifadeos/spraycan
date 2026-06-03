@@ -214,6 +214,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .src-card[hidden] { display: none; }
 .src-card figcaption { font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 4px; letter-spacing: .3px; }
 #srcPreview { display: block; max-width: 200px; max-height: 150px; height: auto; border: 1px solid var(--line); border-radius: 8px; }
+#srcPreview[hidden] { display: none; }
+.src-upload { width: 200px; height: 150px; font-size: 44px; line-height: 1; color: var(--muted); background: var(--panel-2); border: 2px dashed var(--line); border-radius: 8px; cursor: pointer; flex: 0 0 auto; }
+.src-upload:hover { border-color: var(--accent); color: var(--ink); background: rgba(217,165,40,.10); }
 .canvases { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; align-items: start; }
 @media (max-width: 980px) { .canvases { grid-template-columns: 1fr; } }
 .canvas-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
@@ -265,11 +268,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
     linear-gradient(45deg, #1c1e23 25%, transparent 25%), linear-gradient(-45deg, #1c1e23 25%, transparent 25%),
     linear-gradient(45deg, transparent 75%, #1c1e23 75%), linear-gradient(-45deg, transparent 75%, #1c1e23 75%);
   background-size: 18px 18px; background-position: 0 0, 0 9px, 9px -9px, -9px 0;
-  border: 1px solid var(--line); border-radius: 8px; min-height: 200px;
+  border: 1px solid var(--line); border-radius: 8px; aspect-ratio: 1 / 1;
   display: flex; align-items: center; justify-content: center; overflow: hidden;
 }
-#editor { max-width: 100%; height: auto; cursor: crosshair; touch-action: none; display: block; }
+#editor { max-width: 100%; max-height: 100%; width: auto; height: auto; cursor: crosshair; touch-action: none; display: block; }
 #editor:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
-.preview-wrap svg { max-width: 100%; height: auto; display: block; }
+.preview-wrap svg { max-width: 100%; max-height: 100%; width: auto; height: auto; display: block; }
 .empty, .editor-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 24px 16px; }
 .editor-empty strong { display: block; color: var(--ink); font-size: 14px; margin-bottom: 4px; }

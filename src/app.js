@@ -29,7 +29,7 @@ const els = {
   dims: $('dims'), status: $('status'), guide: $('guide'),
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'),
   stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
-  srcPreview: $('srcPreview'), srcCard: $('srcCard'),
+  srcPreview: $('srcPreview'), srcCard: $('srcCard'), srcUpload: $('srcUpload'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
 };
 
@@ -265,13 +265,13 @@ function setExportsEnabled(on) { [els.exportSvg, els.exportPdf, els.exportBtn].f
 function renderSource() {
   const cv = els.srcPreview, img = state.img;
   if (!cv) return;
-  if (!img) { if (els.srcCard) els.srcCard.hidden = true; return; }
+  if (!img) { cv.hidden = true; if (els.srcUpload) els.srcUpload.hidden = false; return; }
   const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
   const s = Math.min(200 / iw, 150 / ih, 1);
   cv.width = Math.max(1, Math.round(iw * s));
   cv.height = Math.max(1, Math.round(ih * s));
   cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-  if (els.srcCard) els.srcCard.hidden = false;
+  cv.hidden = false; if (els.srcUpload) els.srcUpload.hidden = true; // preview replaces the + tile
 }
 
 // Keep the Remove-background toggle button's visual state in sync with its checkbox.
@@ -554,6 +554,7 @@ function init() {
   });
   els.sample.addEventListener('click', loadSample);
   els.open.addEventListener('click', () => els.file.click());
+  els.srcUpload.addEventListener('click', () => els.file.click());
   els.reset.addEventListener('click', resetToDefaults);
   els.removeBgBtn.addEventListener('click', () => {
     els.removeBg.checked = !els.removeBg.checked;

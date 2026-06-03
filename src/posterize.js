@@ -30,20 +30,57 @@ export function luminanceRange(gray) {
   return { lo, hi };
 }
 
-// Histogram-quantile thresholds: place each threshold where an equal share of
-// the image's pixels falls, so the layers track the tones that actually exist.
-// This captures detail in busy regions (fur, grass) far better than naive even
-// spacing, which wastes bands on empty tonal gaps (e.g. a flat sky).
+// Multilevel Otsu thresholds: choose the K = `layers` boundaries that split the
+// histogram into K+1 tonal classes maximizing between-class variance — i.e. the
+// cleanest possible figure/ground separation. This is what makes a freshly
+// loaded photo read as a recognizable stencil out of the box, instead of the
+// blobby result that equal-pixel-share (quantile) thresholds tend to give.
+// Solved exactly with a DP over the 256-bin histogram (Liao's moment tables).
 export function autoThresholds(gray, layers) {
+  const K = Math.max(1, layers);
   const hist = luminanceHistogram(gray);
   const total = gray.data.length || 1;
-  const t = [];
-  let cum = 0, next = 1;
-  for (let v = 0; v < 256; v++) {
-    cum += hist[v];
-    while (next <= layers && cum >= (total * next) / (layers + 1)) { t.push(v); next++; }
+  // Cumulative zeroth (P) and first (S) moments of the probability histogram.
+  const P = new Float64Array(256), S = new Float64Array(256);
+  for (let i = 0; i < 256; i++) {
+    const p = hist[i] / total;
+    P[i] = (i ? P[i - 1] : 0) + p;
+    S[i] = (i ? S[i - 1] : 0) + i * p;
   }
-  while (t.length < layers) t.push(255);
+  // Between-class term for a class spanning [a..b]: (Σ i·p)² / (Σ p).
+  const H = (a, b) => {
+    const w = P[b] - (a ? P[a - 1] : 0);
+    if (w <= 1e-12) return 0;
+    const s = S[b] - (a ? S[a - 1] : 0);
+    return (s * s) / w;
+  };
+  const M = K + 1; // number of classes
+  // dp[v] = best between-class variance partitioning [0..v]; rebuilt per class count.
+  let dp = new Float64Array(256);
+  for (let v = 0; v < 256; v++) dp[v] = H(0, v);
+  const argTables = [];
+  for (let k = 2; k <= M; k++) {
+    const cur = new Float64Array(256).fill(-Infinity);
+    const arg = new Int16Array(256).fill(-1);
+    for (let v = k - 1; v < 256; v++) {
+      let best = -Infinity, bestU = k - 2;
+      for (let u = k - 2; u < v; u++) {
+        const val = dp[u] + H(u + 1, v);
+        if (val > best) { best = val; bestU = u; }
+      }
+      cur[v] = best; arg[v] = bestU;
+    }
+    dp = cur; argTables.push(arg);
+  }
+  // Backtrack the K cut points (boundary = end-of-previous-class + 1).
+  const t = [];
+  let v = 255;
+  for (let k = M; k >= 2; k--) {
+    const u = argTables[k - 2][v];
+    t.push(u + 1);
+    v = u;
+  }
+  t.reverse();
   return dedupeAscending(t);
 }
 

@@ -71,6 +71,14 @@ test('auto thresholds are ascending and in range', () => {
   assert.ok(t[0] >= 10 && t[t.length - 1] <= 240, 'within tonal range');
 });
 
+test('autoThresholds (Otsu) splits a bimodal image between the two modes', () => {
+  const rows = [];
+  for (let y = 0; y < 8; y++) rows.push([40, 40, 40, 40, 210, 210, 210, 210]);
+  const g = gray(rows);
+  const [t] = autoThresholds(g, 1);
+  assert.ok(t > 40 && t <= 210, `Otsu threshold ${t} should sit between the two modes`);
+});
+
 test('layers nest: darker layer OPEN ⊆ lighter layer OPEN', () => {
   const g = gray([[0, 60, 120, 180, 240]]);
   const layers = buildLayers(g, [80, 160]);
