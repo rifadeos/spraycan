@@ -484,6 +484,22 @@ const LOOK_IDS = ['brightness', 'contrast', 'smooth', 'detail', 'invert', 'autoL
 function captureDefaults() {
   els.root.querySelectorAll('[data-param]').forEach(el => { DEFAULTS[el.id] = (el.type === 'checkbox') ? el.checked : el.value; });
 }
+
+// Persist workshop/output preferences (NOT look/preset params, which auto-pick per
+// image) so they survive across visits — handy when you always cut the same size /
+// material / machine.
+const PERSIST_IDS = ['material', 'targetWidth', 'unit', 'pageSize', 'maxResolution', 'margin'];
+function saveSettings() {
+  const o = {};
+  PERSIST_IDS.forEach(id => { const el = document.getElementById(id); if (el) o[id] = el.value; });
+  try { localStorage.setItem('spraycan_settings', JSON.stringify(o)); } catch {}
+}
+function loadSettings() {
+  try {
+    const o = JSON.parse(localStorage.getItem('spraycan_settings') || '{}');
+    PERSIST_IDS.forEach(id => { const el = document.getElementById(id); if (el && o[id] != null) el.value = o[id]; });
+  } catch {}
+}
 function applyDefaults(ids) {
   ids.forEach(id => {
     const el = document.getElementById(id);
@@ -635,6 +651,7 @@ async function onChange(el) {
   clearTimeout(previewTimer);            // cancel a pending low-res preview
   reflectValues(els.root);
   state.params = mergeParams();
+  if (PERSIST_IDS.includes(el.id)) saveSettings();   // remember output/material prefs across visits
   if (!state.img) return;
   const stale = state.grayPreview;       // a drag preview may have left state at low resolution
   try {
@@ -757,6 +774,7 @@ function freeLayers() {
 
 async function useImage(img) {
   const my = ++genToken;                     // new generation — supersedes any in-flight pipeline
+  try { localStorage.setItem('spraycan_seen', '1'); } catch {}
   freeLayers();
   state.img = img;
   state.processedImg = null;
@@ -789,6 +807,11 @@ function loadSample() {
 function init() {
   reflectValues(els.root);
   captureDefaults();
+  loadSettings();              // restore saved output/material prefs
+  reflectValues(els.root);     // reflect restored values (e.g. the margin readout)
+  if (!localStorage.getItem('spraycan_seen')) {
+    const first = els.root.querySelector('details.group'); if (first) first.open = true; // first visit → open the Image section
+  }
   setExportsEnabled(false);
   els.editor.style.display = 'none';   // no image yet → keep the empty placeholder centred
   bindControls(els.root, { onInput, onChange });
