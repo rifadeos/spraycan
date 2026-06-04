@@ -3,6 +3,15 @@
 
 import { markToSVG } from '../registration.js';
 
+// Defensive: a fill must be a colour. Accept hex / rgb() / a short keyword; otherwise
+// fall back to black. The app already validates colours, but this guarantees a stray
+// string can never break out of the fill="" attribute (belt-and-suspenders for the
+// combinedSVG that gets injected into the live DOM via innerHTML).
+function safeColor(c) {
+  c = String(c == null ? '' : c).trim();
+  return /^#[0-9a-fA-F]{3,8}$/.test(c) || /^rgb\(\s*[\d.,\s%]+\)$/.test(c) || /^[a-zA-Z]{3,20}$/.test(c) ? c : '#111111';
+}
+
 function svgOpen(widthMm, heightMm, pxW, pxH) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<svg xmlns="http://www.w3.org/2000/svg" width="${round(widthMm)}mm" height="${round(heightMm)}mm" ` +
@@ -22,7 +31,7 @@ export function layerToSVG(traced, dims, opts = {}) {
   const { fill = '#111111', marks = [] } = opts;
   const body = traced.paths.map(d => `    <path d="${d}" />`).join('\n');
   return svgOpen(widthMm, heightMm, traced.width, traced.height) +
-    `  <g fill="${fill}" fill-rule="evenodd" stroke="none">\n${body}\n  </g>\n` +
+    `  <g fill="${safeColor(fill)}" fill-rule="evenodd" stroke="none">\n${body}\n  </g>\n` +
     regGroup(marks, traced.width, traced.height) +
     `</svg>\n`;
 }
@@ -33,7 +42,7 @@ export function combinedSVG(tracedLayers, dims, opts = {}) {
   const { colors = [], marks = [] } = opts;
   let groups = '';
   tracedLayers.forEach((traced, i) => {
-    const fill = colors[i] || '#111111';
+    const fill = safeColor(colors[i] || '#111111');
     const body = traced.paths.map(d => `    <path d="${d}" />`).join('\n');
     groups += `  <g fill="${fill}" fill-rule="evenodd" stroke="none">\n${body}\n  </g>\n`;
   });

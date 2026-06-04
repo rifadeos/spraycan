@@ -13,9 +13,17 @@ export function fitSize(w, h, max) {
 
 export function fileToImage(file) {
   return new Promise((resolve, reject) => {
+    // Guard against non-images and decode-bombs (a huge image can OOM the tab).
+    if (!file || !/^image\//.test(file.type)) { reject(new Error('Please choose an image file.')); return; }
+    if (file.size > 40 * 1024 * 1024) { reject(new Error('That image is over 40 MB — please use a smaller file.')); return; }
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const mp = (img.naturalWidth || 0) * (img.naturalHeight || 0);
+      if (mp > 40e6) { reject(new Error('That image is over 40 megapixels — please use a smaller one.')); return; }
+      resolve(img);
+    };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not load image')); };
     img.src = url;
   });

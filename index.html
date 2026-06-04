@@ -3,6 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Content-Security-Policy. Still blocks the things that matter — inline-script XSS
+       (no 'unsafe-inline' for scripts), <object>/<base> injection, and exfiltration to any
+       host outside the allow-list (connect-src). 'unsafe-eval'/'wasm-unsafe-eval' + blob:
+       are required by the on-device AI libraries (TF.js + ONNX Runtime compile WASM and
+       load it from blob: modules/workers); the listed hosts are exactly the on-demand
+       model downloads (Auto recognition + background removal), captured from the network. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net https://esm.sh; connect-src 'self' blob: https://cdn.jsdelivr.net https://esm.sh https://tfhub.dev https://www.kaggle.com https://storage.googleapis.com https://staticimgly.com; worker-src 'self' blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; base-uri 'self'" />
   <title>SprayCan — image → cuttable spray stencil</title>
   <meta name="description" content="SprayCan turns any image into a layered, cuttable spray-paint stencil — sized to print, ready to cut and spray. Runs in your browser: Auto recognises the image with a small on-device AI model and background removal runs on-device too (models download once; your image is never uploaded)." />
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />

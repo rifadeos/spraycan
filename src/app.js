@@ -1031,11 +1031,14 @@ function init() {
 
 init();
 
-// Debug hook (handy for automated verification; harmless in production).
-window.__sf = {
-  get state() { return state; },
-  get editor() { return editor; },
-  get worker() { return { created: !!_worker, broken: _workerBroken }; }, // pipeline-worker health (verification)
-  bridgeWidthPx,
-  buildPDF: async () => { await ensurePdfLibs(); return buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin }); },
-};
+// Debug hook for automated verification — only on localhost, so production never
+// exposes the live state (incl. image-derived buffers) or a PDF trigger on `window`.
+if (/^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname)) {
+  window.__sf = {
+    get state() { return state; },
+    get editor() { return editor; },
+    get worker() { return { created: !!_worker, broken: _workerBroken }; }, // pipeline-worker health (verification)
+    bridgeWidthPx,
+    buildPDF: async () => { await ensurePdfLibs(); return buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin }); },
+  };
+}
