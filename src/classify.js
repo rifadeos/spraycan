@@ -8,19 +8,25 @@
 
 import { loadScript } from './vendor.js';
 
+// Pinned versions + Subresource Integrity hashes — the browser refuses to run the
+// script if the CDN bytes don't match, hardening the "image never leaves your
+// device" guarantee against a CDN compromise.
 const TF = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js';
+const TF_SRI = 'sha384-vE8hbVJ4lezako5rlvE7bY0BVzWlFhZncPlckrqNwcUQpVtgbENTgZ8TBbnPjZre';
 const BLAZEFACE = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/blazeface@0.0.7/dist/blazeface.min.js';
+const BLAZEFACE_SRI = 'sha384-pmFVRqTsqHmtuLJVyzlEVoLnr2CAevVBYX7slpnjib4g66wM8zJV8i/0EL6U2PIk';
 const MOBILENET = 'https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js';
+const MOBILENET_SRI = 'sha384-oBAqwJ0tv9zzKlbIZyBhhXlEvU/PMrSMqDyOHlEZVC8xWHx4yPySuS7vRikRcYFq';
 
 let models = null;
 
 async function load() {
   if (models) return models;
-  await loadScript(TF);
+  await loadScript(TF, TF_SRI);
   if (!window.tf) throw new Error('tfjs unavailable');
   await window.tf.ready();
-  await loadScript(BLAZEFACE);
-  await loadScript(MOBILENET);
+  await loadScript(BLAZEFACE, BLAZEFACE_SRI);
+  await loadScript(MOBILENET, MOBILENET_SRI);
   if (!window.blazeface || !window.mobilenet) throw new Error('models unavailable');
   const [face, net] = await Promise.all([
     window.blazeface.load(),

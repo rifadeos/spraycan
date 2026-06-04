@@ -5,11 +5,12 @@
 
 const cache = new Map();
 
-export function loadScript(src) {
+export function loadScript(src, integrity) {
   if (cache.has(src)) return cache.get(src);
   const p = new Promise((resolve, reject) => {
     const s = document.createElement('script');
     s.src = src; s.async = true;
+    if (integrity) { s.integrity = integrity; s.crossOrigin = 'anonymous'; } // verify CDN bytes (SRI)
     s.onload = () => resolve();
     s.onerror = () => { cache.delete(src); reject(new Error('Failed to load ' + src)); };
     document.head.appendChild(s);
