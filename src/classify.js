@@ -46,6 +46,21 @@ const SCENE = [
   'rapeseed', 'hay', 'barn', 'boathouse', 'castle', 'cliff dwelling', 'valley',
 ];
 
+// MobileNet class fragments that mean "an animal". A wild animal in a wide frame
+// is usually a scene to keep (→ landscape) rather than a subject to cut out.
+const ANIMAL = [
+  'dog', 'hound', 'terrier', 'retriever', 'spaniel', 'poodle', 'cat', 'tabby', 'lion', 'tiger',
+  'leopard', 'cheetah', 'jaguar', 'lynx', 'cougar', 'puma', 'wolf', 'fox', 'coyote', 'hyena',
+  'bear', 'panda', 'elephant', 'zebra', 'giraffe', 'antelope', 'gazelle', 'impala', 'hartebeest',
+  'bison', 'ox', 'ram', 'bighorn', 'ibex', 'hog', 'boar', 'warthog', 'hippopotamus', 'rhinoceros',
+  'monkey', 'ape', 'gorilla', 'chimpanzee', 'baboon', 'lemur', 'kangaroo', 'wallaby', 'koala',
+  'sloth', 'otter', 'beaver', 'badger', 'weasel', 'mongoose', 'meerkat', 'hare', 'rabbit',
+  'squirrel', 'marmot', 'deer', 'elk', 'moose', 'camel', 'llama', 'horse', 'eagle', 'hawk', 'owl',
+  'vulture', 'flamingo', 'pelican', 'stork', 'crane', 'heron', 'peacock', 'ostrich', 'penguin',
+  'goose', 'swan', 'parrot', 'toucan', 'snake', 'lizard', 'iguana', 'crocodile', 'alligator',
+  'turtle', 'frog', 'shark', 'whale', 'dolphin', 'seal', 'sea lion', 'gibbon', 'orangutan',
+];
+
 // Returns ML signals: { faces, faceArea (largest face as a fraction of the frame),
 // scene, sceneName, hasObject, top }. Throws if the models can't load.
 export async function classifyImage(img) {
@@ -55,28 +70,29 @@ export async function classifyImage(img) {
 
   let raw = [];
   try { raw = await face.estimateFaces(c, false); } catch { raw = []; }
-  // Keep only confident detections — BlazeFace will weakly fire on circular
-  // patterns (clock faces, logos), so require a high probability + real size.
-  let faceArea = 0, faces = 0;
+  // Track the most prominent face + its confidence. BlazeFace weakly fires on
+  // circular patterns, so the caller combines confidence + size + skin to decide.
+  let faceArea = 0, faceConf = 0, faces = 0;
   for (const f of (raw || [])) {
     const tl = f.topLeft, br = f.bottomRight;
     if (!tl || !br) continue;
     const p = Array.isArray(f.probability) ? f.probability[0] : (f.probability ?? 1);
-    if (p < 0.9) continue;
+    const a = ((br[0] - tl[0]) * (br[1] - tl[1])) / area;
+    if (a < 0.02 || p < 0.5) continue;            // ignore tiny / very-low-confidence noise
     faces++;
-    faceArea = Math.max(faceArea, ((br[0] - tl[0]) * (br[1] - tl[1])) / area);
+    if (a > faceArea) { faceArea = a; faceConf = p; }
   }
 
   let top = [];
   try { top = await net.classify(c, 5); } catch { top = []; }
   const names = (top || []).map(t => (t.className || '').toLowerCase());
   const sceneHit = names.find(n => SCENE.some(s => n.includes(s)));
+  const animal = names.length > 0 && ANIMAL.some(a => names[0].includes(a)); // top-1 is an animal
 
   return {
-    faces: (faces || []).length,
-    faceArea,
-    scene: !!sceneHit,
-    sceneName: sceneHit ? sceneHit.split(',')[0] : '',
+    faces, faceArea, faceConf,
+    scene: !!sceneHit, sceneName: sceneHit ? sceneHit.split(',')[0] : '',
+    animal,
     hasObject: (top || []).length > 0,
     top: top || [],
   };

@@ -122,9 +122,14 @@ export function pickPreset(stats) {
 // logo; a recognised object → isolate it; and with no ML it defers to the colour
 // heuristic (pickPreset) so Auto still works offline.
 export function presetFromSignals(sig = {}) {
-  if (sig.faces > 0 && sig.faceArea >= 0.045) return 'portrait';
-  if (sig.scene) return 'landscape';
+  const faceArea = sig.faceArea ?? 0, faceConf = sig.faceConf ?? 0, skin = sig.skinFraction ?? 0;
+  // A large confident face, OR a moderately-confident face backed by skin tones,
+  // → portrait. (Real faces in soft/old photos score lower than the 0.9 a clean
+  // detection gives, so skin rescues them while circles/patterns — no skin — don't.)
+  if (faceArea >= 0.04 && (faceConf >= 0.9 || (faceConf >= 0.55 && skin >= 0.06))) return 'portrait';
+  if (sig.scene) return 'landscape';                                  // recognised outdoor scene
+  if (sig.animal && (sig.aspect ?? 1) >= 1.4) return 'landscape';     // wildlife in a wide frame → keep the scene
   if ((sig.toneCount ?? 99) <= 6 && (sig.std ?? 0) > 55) return 'logo';
-  if (sig.hasObject) return 'subject';
+  if (sig.hasObject) return 'subject';                                // a recognised object → isolate it
   return pickPreset(sig);
 }

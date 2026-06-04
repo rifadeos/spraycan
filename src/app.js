@@ -529,10 +529,11 @@ async function pickPresetForImage(img) {
     busy('Analysing image (first run downloads a small model)…');
     const ml = await classifyImage(img);
     if (ml) {
-      const id = presetFromSignals({ ...stats, faces: ml.faces, faceArea: ml.faceArea, scene: ml.scene, hasObject: ml.hasObject });
-      const why = (ml.faces > 0 && ml.faceArea >= 0.045) ? 'face detected'
-        : ml.scene ? (ml.sceneName || 'scene')
-        : (id === 'subject' && ml.top && ml.top[0]) ? (ml.top[0].className || '').split(',')[0]
+      const id = presetFromSignals({ ...stats, faces: ml.faces, faceArea: ml.faceArea, faceConf: ml.faceConf, scene: ml.scene, animal: ml.animal, hasObject: ml.hasObject });
+      const top1 = ((ml.top && ml.top[0] && ml.top[0].className) || '').split(',')[0];
+      const why = id === 'portrait' ? 'face detected'
+        : id === 'landscape' ? (ml.scene ? (ml.sceneName || 'scene') : ml.animal ? `${top1} in scene` : 'scene')
+        : (id === 'subject' && top1) ? top1
         : '';
       if (els.preset) els.preset.title = 'AI: ' + (PRESETS[id]?.label || id) + (why ? ` — ${why}` : '');
       return id;
