@@ -38,6 +38,27 @@
   font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Optional light theme — toggled via data-theme on <html> (tokens only; mustard accent kept). */
+:root[data-theme="light"] {
+  --bg: #efece6;
+  --panel: #ffffff;
+  --panel-2: #f3f1ec;
+  --line: #d9d4cb;
+  --ink: #1b1c1f;
+  --muted: #5b616b;          /* AA on white */
+  --panel-3: #ffffff;
+  --hover: rgba(0,0,0,.045);
+  --hover-2: rgba(0,0,0,.075);
+  --accent-soft: rgba(217,165,40,.22);
+}
+:root[data-theme="light"] .editor-wrap,
+:root[data-theme="light"] .preview-wrap {
+  background-color: #e7e3da;
+  background-image:
+    linear-gradient(45deg, #dcd6cb 25%, transparent 25%), linear-gradient(-45deg, #dcd6cb 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #dcd6cb 75%), linear-gradient(-45deg, transparent 75%, #dcd6cb 75%);
+}
+
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--ink); display: flex; flex-direction: column; }

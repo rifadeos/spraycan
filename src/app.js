@@ -32,7 +32,7 @@ const els = {
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'), presetReason: $('presetReason'),
   stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
   srcPreview: $('srcPreview'), srcCard: $('srcCard'), srcUpload: $('srcUpload'),
-  zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
+  zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'), themeToggle: $('themeToggle'),
 };
 
 const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false, grayFlat: false };
@@ -803,8 +803,26 @@ function loadSample() {
   useImage(c).catch(err => fail('Sample failed: ' + err.message));
 }
 
+// Light/dark theme (persisted; respects the OS preference on first visit).
+function applyTheme(t) {
+  if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
+}
+function initTheme() {
+  let t = null;
+  try { t = localStorage.getItem('spraycan_theme'); } catch {}
+  if (!t) t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+  applyTheme(t);
+  if (els.themeToggle) els.themeToggle.addEventListener('click', () => {
+    const light = document.documentElement.getAttribute('data-theme') !== 'light';
+    applyTheme(light ? 'light' : 'dark');
+    try { localStorage.setItem('spraycan_theme', light ? 'light' : 'dark'); } catch {}
+  });
+}
+
 // ---- init -----------------------------------------------------------------
 function init() {
+  initTheme();
   reflectValues(els.root);
   captureDefaults();
   loadSettings();              // restore saved output/material prefs
