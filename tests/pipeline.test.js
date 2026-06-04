@@ -15,6 +15,8 @@ import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
 import { autoLevels, clahe, bilateralFilter, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
 import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor, presetFromSignals } from '../src/presets.js';
+import { grayFromRGBA, isFlatGray } from '../src/grayfilters.js';
+import { buildMasks, buildBrightMask } from '../src/buildmasks.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -487,4 +489,67 @@ test('frameBorder gives edge-touching designs a frame to bridge to', () => {
   const bridges = autoBridges(framed, { widthPx: 1 });
   assert.ok(bridges.length >= 1, 'bridge placed to frame');
   assert.equal(findIslands(burnBridges(framed, bridges)).islands.length, 0);
+});
+
+// --- shared off-thread pipeline functions (worker + main-thread fallback) ----
+// grayFromRGBA + buildMasks are the exact pure functions the Web Worker runs and
+// the main thread falls back to, so pinning them here pins both code paths at once.
+
+function rgba(pixels) { // pixels: flat row-major array of [r,g,b]; alpha = 255
+  const out = new Uint8ClampedArray(pixels.length * 4);
+  for (let i = 0; i < pixels.length; i++) { out[i * 4] = pixels[i][0]; out[i * 4 + 1] = pixels[i][1]; out[i * 4 + 2] = pixels[i][2]; out[i * 4 + 3] = 255; }
+  return out;
+}
+
+test('grayFromRGBA matches the luminance formula (filters off)', () => {
+  const g = grayFromRGBA(rgba([[255, 255, 255], [0, 0, 0], [255, 0, 0], [0, 255, 0]]), 2, 2, { autoLevels: false });
+  assert.equal(g.width, 2); assert.equal(g.height, 2); assert.equal(g.data.length, 4);
+  assert.equal(g.data[0], 255);                          // white
+  assert.equal(g.data[1], 0);                            // black
+  assert.ok(Math.abs(g.data[2] - 54) <= 1);              // red  ≈ 0.2126*255
+  assert.ok(Math.abs(g.data[3] - 182) <= 1);             // green ≈ 0.7152*255
+});
+
+test('grayFromRGBA inverts when asked', () => {
+  const g = grayFromRGBA(rgba([[255, 255, 255], [0, 0, 0]]), 2, 1, { autoLevels: false, invert: true });
+  assert.equal(g.data[0], 0);                            // white -> 0
+  assert.equal(g.data[1], 255);                          // black -> 255
+});
+
+test('isFlatGray flags near-uniform images only', () => {
+  assert.equal(isFlatGray(gray([[128, 128], [128, 129]])), true);   // range 1 (< 4)
+  assert.equal(isFlatGray(gray([[0, 255], [0, 255]])), false);      // range 255
+});
+
+test('buildBrightMask flags pixels at/above the threshold', () => {
+  const m = buildBrightMask(gray([[200, 210, 255], [0, 209, 211]]), 210);
+  assert.deepEqual(Array.from(m), [0, 1, 1, 0, 0, 1]);
+});
+
+test('buildMasks returns one base mask per layer (+ optional edge)', () => {
+  const rows = [];
+  for (let y = 0; y < 24; y++) { const r = []; for (let x = 0; x < 24; x++) r.push((x * 10) % 256); rows.push(r); }
+  const g = gray(rows);
+  const th = autoThresholds(g, 4);
+  const { layers, edge } = buildMasks(g, th, { minFeature: 1, bridgeMode: 'auto' });
+  assert.equal(layers.length, buildLayers(g, th).length);
+  for (const L of layers) {
+    assert.equal(L.baseMask.width, g.width);
+    assert.equal(L.baseMask.height, g.height);
+    assert.ok(L.baseMask.data instanceof Uint8Array);
+    assert.ok(Array.isArray(L.bridges));
+    assert.ok(typeof L.threshold === 'number');
+  }
+  assert.equal(edge, null);                              // edges:false → no edge layer
+  const withEdge = buildMasks(g, th, { minFeature: 1, edges: true });
+  assert.ok(withEdge.edge && withEdge.edge.baseMask.width === g.width);
+});
+
+test('buildMasks honours bridgeMode "none" (fill all islands, no ties)', () => {
+  // An enclosed dark island inside a darker field → an island former at some level.
+  const rows = [];
+  for (let y = 0; y < 16; y++) { const r = []; for (let x = 0; x < 16; x++) { const edge = (x < 2 || x > 13 || y < 2 || y > 13); r.push(edge ? 20 : (x > 6 && x < 10 && y > 6 && y < 10 ? 20 : 200)); } rows.push(r); }
+  const g = gray(rows);
+  const { layers } = buildMasks(g, autoThresholds(g, 3), { minFeature: 1, bridgeMode: 'none' });
+  for (const L of layers) assert.equal(L.bridges.length, 0);
 });

@@ -1,11 +1,11 @@
 // SprayCan — app controller. Owns state, runs the pipeline, wires the UI.
 
-import { fileToImage, imageToGray } from './image.js';
-import { autoThresholds, buildLayers } from './posterize.js';
-import { despeckle, frameBorder, removeSmallComponents, dilate, morphClose } from './morphology.js';
-import { edgeMask } from './edges.js';
+import { fileToImage, imageToGray, fitSize } from './image.js';
+import { grayFromRGBA, isFlatGray } from './grayfilters.js';
+import { buildMasks } from './buildmasks.js';
+import { autoThresholds } from './posterize.js';
 import { findIslands } from './islands.js';
-import { autoBridges, burnBridges, prepareIslands } from './bridges.js';
+import { autoBridges, burnBridges } from './bridges.js';
 import { traceMaskToPaths } from './trace.js';
 import { physicalSize, toMm } from './units.js';
 import { cornerMarks } from './registration.js';
@@ -93,40 +93,63 @@ function safeMaxResolution(requested) {
   return requested;
 }
 
-function reGray(opts = {}) {
-  const p = state.params;
-  const src = state.processedImg || state.img; // bg-removed or AI-simplified base, else the original
-  const maxResolution = opts.maxResolution || safeMaxResolution(p.maxResolution);
-  state.gray = imageToGray(src, {
-    maxResolution, brightness: p.brightness * 1.2, contrast: p.contrast * 2,
-    invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip,
+// ---- off-thread pipeline plumbing -----------------------------------------
+// The heavy, unchunked CPU work (tone-mapping via bilateral/CLAHE + posterise +
+// morphology + island bridging) runs in a module Web Worker so dragging stays
+// smooth. If a worker can't be created (old browser) or it errors, we run the very
+// same pure functions on the main thread — identical output, just on the UI thread.
+let _worker = null, _workerBroken = false, _reqId = 0;
+const _pending = new Map();
+function getWorker() {
+  if (_workerBroken) return null;
+  if (_worker) return _worker;
+  try {
+    _worker = new Worker(new URL('./pipeline.worker.js', import.meta.url), { type: 'module' });
+    _worker.onmessage = (e) => {
+      const r = _pending.get(e.data.id);
+      if (r) { _pending.delete(e.data.id); r.resolve(e.data); }
+    };
+    _worker.onerror = () => {                 // fall back permanently; reject anything in flight
+      _workerBroken = true;
+      for (const [, r] of _pending) r.reject(new Error('pipeline worker error'));
+      _pending.clear();
+      try { _worker.terminate(); } catch {}
+      _worker = null;
+    };
+  } catch { _workerBroken = true; _worker = null; }
+  return _worker;
+}
+function runOnWorker(payload) {
+  const w = getWorker();
+  if (!w) return Promise.reject(new Error('no worker'));
+  return new Promise((resolve, reject) => {
+    _pending.set(payload.id, { resolve, reject });
+    // Inputs are cloned (not transferred) so the main thread keeps its copies
+    // (state.gray / sampleData stay valid). The worker transfers the results back.
+    try { w.postMessage(payload); } catch (e) { _pending.delete(payload.id); reject(e); }
   });
-  state.grayPreview = maxResolution < p.maxResolution; // true → this is a low-res drag preview, not final
-  let lo = 255, hi = 0; const gd = state.gray.data;
-  for (let i = 0; i < gd.length; i++) { const v = gd[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
-  state.grayFlat = (hi - lo) < 4; // near-uniform image → posterising yields empty/flat layers; warn the user
-  if (!p.thresholds || !p.thresholds.length) p.thresholds = autoThresholds(state.gray, p.layers);
-  buildSampleData(src);
 }
-
-// Cache the image at working resolution so the eyedropper can read true colours.
-function buildSampleData(src) {
-  const g = state.gray;
-  src = src || state.img;
-  if (!g || !src) { state.sampleData = null; return; }
-  const c = document.createElement('canvas'); c.width = g.width; c.height = g.height;
+// Main-thread fallback: the identical pure functions, same result shape as the worker.
+function computeMainThread(payload) {
+  const { w, h, rgba, grayData, gopts, layersCount, thresholds, maskOpts } = payload;
+  const gray = grayData ? { width: w, height: h, data: grayData } : grayFromRGBA(rgba, w, h, gopts);
+  const th = (thresholds && thresholds.length) ? thresholds : autoThresholds(gray, layersCount);
+  const { layers, edge } = buildMasks(gray, th, maskOpts);
+  return { ok: true, grayFlat: isFlatGray(gray), thresholds: th, layers, edge, gray: grayData ? null : gray };
+}
+// Draw the working image (bg-removed base or original) at `maxResolution` and read
+// back its RGBA — the one piece that must stay on the main thread (needs a canvas).
+function drawWorkingRGBA(maxResolution) {
+  const src = state.processedImg || state.img;
+  const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+  const { w, h } = fitSize(sw, sh, maxResolution);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(src, 0, 0, g.width, g.height);
-  state.sampleData = ctx.getImageData(0, 0, g.width, g.height);
+  ctx.drawImage(src, 0, 0, w, h);
+  return ctx.getImageData(0, 0, w, h);     // ImageData at working resolution (also the eyedropper source)
 }
-// Pixels at/above `thresh` are protected from being sprayed (kept as bare wall),
-// so highlights survive posterising. Portraits use a much lower threshold so the
-// continuous mid-tones of a face stay connected instead of punching "face holes".
-function buildBrightMask(gray, thresh = 210) {
-  const b = new Uint8Array(gray.data.length);
-  for (let i = 0; i < b.length; i++) b[i] = gray.data[i] >= thresh ? 1 : 0;
-  return b;
-}
+// Normalise a mask returned from the worker (typed-array view) or the fallback.
+function asMask(m) { return { width: m.width, height: m.height, data: m.data instanceof Uint8Array ? m.data : new Uint8Array(m.data) }; }
 function sampleImageColor(x, y) {
   const d = state.sampleData;
   if (!d) return null;
@@ -156,57 +179,64 @@ function traceOpts() {
 }
 function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, layer.isEdge ? { pathomit: 8 } : traceOpts()); }
 
-async function recomputeAll() {
-  if (!state.gray) return;
+// Run the full pipeline. The heavy compute (gray + masks) goes to the worker (or the
+// main-thread fallback); reburn + retrace (ImageTracer) + commit stay here. Options:
+//   regray            — re-draw + re-tone-map from the source (else reuse state.gray)
+//   recomputeThresholds — re-derive Otsu tones for the layer count + redraw the sliders
+//   maxResolution     — cap working resolution (used by the low-res live drag preview)
+async function runPipeline({ regray = true, recomputeThresholds = false, maxResolution } = {}) {
+  if (!state.img) return;
+  const p = state.params;
   const my = ++busyToken;
   undoStack.length = 0; redoStack.length = 0; updateUndoButtons();
   try {
     busy('Building layers…'); await raf();
-    const p = state.params;
-    const minArea = p.minFeature * p.minFeature;          // despeckle: drop tiny specks
-    // Fill islands smaller than this instead of bridging. Portraits fill much larger
-    // ones so facial highlights merge into the face (far fewer "holes" + ties).
-    const islandSpan = state.presetId === 'portrait' ? 7 : 4;
-    const minIslandArea = Math.max(64, (p.minFeature * islandSpan) ** 2);
-    const maxBridges = p.bridgeMode === 'none' ? 0 : 16;  // None = fill every island (no ties)
-    const brightMask = p.keepHighlights ? buildBrightMask(state.gray) : null;
-    const bw = bridgeWidthPx();
-    // Thin material holding frame — keeps the sheet connected at the edges so
-    // islands can always be bridged, and matches a real stencil's border.
-    const border = Math.max(2, Math.round(Math.min(state.gray.width, state.gray.height) * 0.01));
-    const built = buildLayers(state.gray, p.thresholds);
-    // Build into a local array and commit atomically at the end, so a superseded
-    // run (or a mid-build error) never leaves state.layers half-built.
+    // --- assemble inputs on the main thread (canvas I/O only) ---
+    let w, h, rgba = null, grayData = null;
+    if (regray || !state.gray || !state.gray.data) {
+      const mr = maxResolution || safeMaxResolution(p.maxResolution);
+      const idata = drawWorkingRGBA(mr);
+      state.sampleData = idata;                     // eyedropper reads the raw working RGBA
+      state.grayPreview = mr < p.maxResolution;     // true → low-res drag preview, not final
+      w = idata.width; h = idata.height; rgba = idata.data;
+    } else {
+      w = state.gray.width; h = state.gray.height; grayData = state.gray.data; // reuse gray (mask-only rebuild)
+    }
+    const mmpp = toMm(p.targetWidth, p.unit) / w;
+    const bw = Math.max(1, Math.round(p.bridgeWidth / mmpp));
+    const gopts = { brightness: p.brightness * 1.2, contrast: p.contrast * 2, invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip };
+    const maskOpts = { minFeature: p.minFeature, bridgeMode: p.bridgeMode, keepHighlights: p.keepHighlights, edges: p.edges, edgeAmount: p.edgeAmount, portrait: state.presetId === 'portrait', bridgeWidthPx: bw, mmPerPx: mmpp, tieSpacingMm: materialInfo().tieSpacing };
+    const payload = { id: ++_reqId, w, h, rgba, grayData, gopts, layersCount: p.layers, thresholds: recomputeThresholds ? [] : (p.thresholds || []), maskOpts };
+
+    // --- heavy compute off-thread, with a main-thread fallback ---
+    let res;
+    try { res = await runOnWorker(payload); if (!res || !res.ok) throw new Error((res && res.error) || 'worker failed'); }
+    catch { res = computeMainThread(payload); }
+    if (my !== busyToken) return;                   // a newer change superseded this run — leave state untouched
+
+    // --- commit gray + thresholds (main thread) ---
+    if (res.gray) state.gray = { width: res.gray.width, height: res.gray.height, data: res.gray.data instanceof Uint8ClampedArray ? res.gray.data : new Uint8ClampedArray(res.gray.data) };
+    else state.gray = { width: w, height: h, data: grayData };
+    state.grayFlat = res.grayFlat;
+    p.thresholds = Array.from(res.thresholds);
+    if (recomputeThresholds) renderThresholds(els.thresholds, p.thresholds, onThreshold);
+
+    // --- reburn + retrace each returned mask (ImageTracer + editor stay here) ---
+    // Build into a local array and commit atomically, so a superseded run (or a
+    // mid-build error) never leaves state.layers half-built.
+    const built = res.layers;
     const newLayers = [];
     for (let i = 0; i < built.length; i++) {
-      if (my !== busyToken) return;            // a newer change superseded this run — leave state untouched
-      const cleaned = minArea > 1 ? despeckle(built[i].mask, minArea) : built[i].mask;
-      const framed = frameBorder(cleaned, border);
-      // Smart bridging: fill tiny islands, tie only the meaningful (capped) ones.
-      const { mask: baseMask, bridges } = prepareIslands(framed, { widthPx: bw, minIslandArea, maxBridges, brightMask, keepHighlights: p.keepHighlights, mmPerPx: mmPerPx(), tieSpacingMm: materialInfo().tieSpacing });
-      const layer = { order: i, threshold: built[i].threshold, baseMask, bridges, workMask: null, floatingMask: null, traced: null };
-      reburn(layer);
-      retrace(layer);
+      if (my !== busyToken) return;
+      const layer = { order: i, threshold: built[i].threshold, baseMask: asMask(built[i].baseMask), bridges: built[i].bridges || [], workMask: null, floatingMask: null, traced: null };
+      reburn(layer); retrace(layer);
       newLayers.push(layer);
-      busy(`Building layer ${i + 1} of ${built.length}…`); await raf();  // yield → UI stays responsive
+      busy(`Building layer ${i + 1} of ${built.length}…`); await raf();   // yield → UI stays responsive
     }
     const tonalN = newLayers.length;
-    // Optional edge/line-detail layer: outlines + texture as the top (sprayed-last) layer.
-    if (p.edges) {
+    if (res.edge) {
       busy('Tracing outlines…'); await raf();
-      // Strong outlines only — kill the speckle photos used to produce. Work on the
-      // thin (un-dilated) edge map so component size = contour length: drop short
-      // isolated runs, then thicken + close gaps into clean, cuttable contours.
-      const px = state.gray.width * state.gray.height;
-      const edgeMin = Math.max(40, Math.round(px * 0.00012)); // resolution-scaled floor
-      let em = edgeMask(state.gray, { amount: p.edgeAmount, dilate: 0 });
-      em = removeSmallComponents(em, 1, edgeMin); // keep only sizeable contours, drop dots
-      em = dilate(em, 1);                         // restore a cuttable stroke width
-      em = morphClose(em, 1);                     // bridge small gaps in the outlines
-      em = despeckle(em, edgeMin);                // final tidy (open specks + material slivers)
-      const baseMask = frameBorder(em, border);
-      // Edge lines ARE the design: no island fill / bridging (would solid-fill the gaps).
-      const layer = { order: newLayers.length, threshold: -1, isEdge: true, baseMask, bridges: [], workMask: null, floatingMask: null, traced: null };
+      const layer = { order: newLayers.length, threshold: -1, isEdge: true, baseMask: asMask(res.edge.baseMask), bridges: [], workMask: null, floatingMask: null, traced: null };
       reburn(layer); retrace(layer); newLayers.push(layer);
     }
     if (my !== busyToken) return;   // final supersession check before the atomic commit
@@ -369,7 +399,10 @@ function onBridgesChanged() {
 async function toggleBackground() {
   if (!state.img || !state.params) return;
   const gen = genToken;
-  if (!state.params.removeBg) { state.processedImg = null; reGray(); await recomputeAll(); return; }
+  // Recompute tones only when they haven't been set yet (e.g. a preset just cleared
+  // them); a manual toggle keeps the current tones, matching the old reGray() rule.
+  const rt = !(state.params.thresholds && state.params.thresholds.length);
+  if (!state.params.removeBg) { state.processedImg = null; await runPipeline({ recomputeThresholds: rt }); return; }
   const my = ++busyToken;
   busy('Removing background… (first run downloads a model — please wait)');
   try {
@@ -384,13 +417,12 @@ async function toggleBackground() {
       // No clear subject (≈0) or it kept everything (≈1) → don't isolate; use the full image.
       state.processedImg = null;
       els.removeBg.checked = false; if (state.params) state.params.removeBg = false; syncRemoveBgBtn();
-      reGray(); await recomputeAll();
+      await runPipeline({ recomputeThresholds: rt });
       ready('No clear subject to isolate — using the full image.');
       return;
     }
     state.processedImg = res.image;
-    reGray();
-    await recomputeAll();
+    await runPipeline({ recomputeThresholds: rt });
   } catch (e) {
     console.error(e);
     state.processedImg = null;
@@ -398,7 +430,7 @@ async function toggleBackground() {
     if (state.params) state.params.removeBg = false;
     syncRemoveBgBtn();
     // Still give the user a stencil from the full image rather than nothing.
-    try { reGray(); await recomputeAll(); } catch { /* leave whatever's there */ }
+    try { await runPipeline({ recomputeThresholds: rt }); } catch { /* leave whatever's there */ }
     fail('Background removal failed (needs internet to fetch the model) — using the full image.');
   }
 }
@@ -514,11 +546,7 @@ function resetToDefaults() {
   state.processedImg = null;
   state.params = mergeParams();
   state.params.thresholds = [];
-  if (state.img) {
-    reGray();
-    renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-    recomputeAll().catch(err => fail('Error: ' + err.message));
-  }
+  if (state.img) runPipeline({ recomputeThresholds: true }).catch(err => fail('Error: ' + err.message));
   ready('Settings reset to defaults.');
 }
 
@@ -536,14 +564,8 @@ function resetSection(grp) {
   if (!state.img) { ready('Section reset to defaults.'); return; }
   state.params = mergeParams();
   editor.defaultWidth = bridgeWidthPx();
-  if (layersEl) {                                // re-derive tones for the (kept) layer count
-    state.params.thresholds = [];
-    reGray();
-    renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-  } else {
-    reGray();
-  }
-  recomputeAll().catch(err => fail('Error: ' + err.message));
+  if (layersEl) state.params.thresholds = [];   // re-derive tones for the (kept) layer count
+  runPipeline({ recomputeThresholds: !!layersEl }).catch(err => fail('Error: ' + err.message));
   ready('Section reset to defaults.');
 }
 
@@ -561,15 +583,11 @@ async function applyPreset(id) {
   reflectValues(els.root);
   syncRemoveBgBtn();
   state.params = mergeParams();
-  state.params.thresholds = [];
+  state.params.thresholds = [];   // cleared → runPipeline re-derives tones + redraws the sliders
   if (!state.img) return;
-  const gen = genToken;
   try {
-    reGray();
-    if (gen !== genToken) return;   // a newer image arrived during setup
-    renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
     if (state.params.removeBg) await toggleBackground();
-    else await recomputeAll();
+    else await runPipeline({ recomputeThresholds: true });
   } catch (e) { console.error(e); fail('Could not apply preset: ' + e.message); }
 }
 
@@ -640,11 +658,7 @@ function runPreview(id) {
   if (!state.img) return;
   state.params = mergeParams();
   if (id === 'layers') state.params.thresholds = [];
-  try {
-    reGray({ maxResolution: Math.min(PREVIEW_MAX, state.params.maxResolution) });
-    if (id === 'layers') renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-    recomputeAll().catch(() => {});
-  } catch { /* preview is best-effort */ }
+  runPipeline({ regray: true, recomputeThresholds: id === 'layers', maxResolution: Math.min(PREVIEW_MAX, state.params.maxResolution) }).catch(() => {});
 }
 
 async function onChange(el) {
@@ -656,37 +670,36 @@ async function onChange(el) {
   const stale = state.grayPreview;       // a drag preview may have left state at low resolution
   try {
     switch (el.id) {
+      // Tone-mapping inputs → re-gray + rebuild masks.
       case 'brightness': case 'contrast': case 'invert': case 'maxResolution':
       case 'smooth': case 'autoLevels': case 'mirror': case 'vflip':
-        reGray(); await recomputeAll(); break;
+        await runPipeline(); break;
+      // New layer count → re-derive tones at full resolution + redraw the sliders.
       case 'layers':
-        reGray();                        // ensure full-res before sampling thresholds
-        state.params.thresholds = autoThresholds(state.gray, state.params.layers);
-        renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-        await recomputeAll(); break;
+        await runPipeline({ recomputeThresholds: true }); break;
+      // Mask-only inputs (don't change the greyscale): reuse the cached gray unless a
+      // low-res drag preview left it downscaled, in which case re-gray to full res.
       case 'minFeature':
       case 'bridgeMode':
       case 'keepHighlights':
       case 'edges':
       case 'edgeAmount':
-        if (stale) reGray();             // restore full resolution after a preview
-        await recomputeAll(); break;
+        await runPipeline({ regray: stale }); break;
       case 'detail':
-        if (stale) { reGray(); await recomputeAll(); } else { await retraceAll(); }
+        if (stale) await runPipeline(); else await retraceAll();  // detail only affects vectorising
         break;
       case 'material': {
         const m = MATERIALS[state.params.material] || MATERIALS.mylar;
         els.bridgeWidth.value = String(m.bridge); state.params.bridgeWidth = m.bridge;
         reflectValues(els.root); editor.defaultWidth = bridgeWidthPx();
-        if (stale) reGray();
-        await recomputeAll(); break;
+        await runPipeline({ regray: stale }); break;
       }
       case 'preset':
         await applyPreset(await pickPresetForImage(state.img)); break;
       case 'removeBg':
         await toggleBackground(); break;
       case 'bridgeWidth':
-        editor.defaultWidth = bridgeWidthPx(); if (stale) reGray(); await recomputeAll(); break;
+        editor.defaultWidth = bridgeWidthPx(); await runPipeline({ regray: stale }); break;
       case 'targetWidth': case 'unit':
         editor.defaultWidth = bridgeWidthPx(); updateDims(); updateCombined(); break;
     }
@@ -696,7 +709,8 @@ async function onChange(el) {
 function onThreshold(i, value) {
   if (!state.params) return;
   state.params.thresholds[i] = value;
-  recomputeAll().catch(err => fail('Error: ' + err.message));
+  // Tones changed but the greyscale didn't → mask-only rebuild (reuse the cached gray).
+  runPipeline({ regray: state.grayPreview, recomputeThresholds: false }).catch(err => fail('Error: ' + err.message));
 }
 
 // ---- export ---------------------------------------------------------------
@@ -927,6 +941,7 @@ init();
 window.__sf = {
   get state() { return state; },
   get editor() { return editor; },
+  get worker() { return { created: !!_worker, broken: _workerBroken }; }, // pipeline-worker health (verification)
   bridgeWidthPx,
   buildPDF: async () => { await ensurePdfLibs(); return buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin }); },
 };
