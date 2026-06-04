@@ -3,6 +3,7 @@
 import { fileToImage, imageToGray, fitSize } from './image.js';
 import { grayFromRGBA, isFlatGray } from './grayfilters.js';
 import { buildMasks } from './buildmasks.js';
+import { recomputePlan } from './recomputePlan.js';
 import { autoThresholds } from './posterize.js';
 import { findIslands } from './islands.js';
 import { autoBridges, burnBridges } from './bridges.js';
@@ -707,39 +708,26 @@ async function onChange(el) {
   if (PERSIST_IDS.includes(el.id)) saveSettings();   // remember output/material prefs across visits
   if (!state.img) return;
   const stale = state.grayPreview;       // a drag preview may have left state at low resolution
+  const plan = recomputePlan(el.id, stale);   // pure decision (tested in isolation)
   try {
-    switch (el.id) {
-      // Tone-mapping inputs → re-gray + rebuild masks.
-      case 'brightness': case 'contrast': case 'invert': case 'maxResolution':
-      case 'smooth': case 'autoLevels': case 'mirror': case 'vflip':
-        await runPipeline(); break;
-      // New layer count → re-derive tones at full resolution + redraw the sliders.
-      case 'layers':
-        await runPipeline({ recomputeThresholds: true }); break;
-      // Mask-only inputs (don't change the greyscale): reuse the cached gray unless a
-      // low-res drag preview left it downscaled, in which case re-gray to full res.
-      case 'minFeature':
-      case 'bridgeMode':
-      case 'keepHighlights':
-      case 'edges':
-      case 'edgeAmount':
-        await runPipeline({ regray: stale }); break;
-      case 'detail':
-        if (stale) await runPipeline(); else await retraceAll();  // detail only affects vectorising
-        break;
+    switch (plan.action) {
+      case 'pipeline':
+        await runPipeline({ regray: plan.regray, recomputeThresholds: plan.recomputeThresholds }); break;
+      case 'retrace':
+        await retraceAll(); break;             // line-detail only changes the vectoriser
       case 'material': {
         const m = MATERIALS[state.params.material] || MATERIALS.mylar;
         els.bridgeWidth.value = String(m.bridge); state.params.bridgeWidth = m.bridge;
         reflectValues(els.root); editor.defaultWidth = bridgeWidthPx();
-        await runPipeline({ regray: stale }); break;
+        await runPipeline({ regray: plan.regray }); break;
       }
+      case 'bridgeWidth':
+        editor.defaultWidth = bridgeWidthPx(); await runPipeline({ regray: plan.regray }); break;
       case 'preset':
         await applyPreset(await pickPresetForImage(state.img)); break;
       case 'removeBg':
         await toggleBackground(); break;
-      case 'bridgeWidth':
-        editor.defaultWidth = bridgeWidthPx(); await runPipeline({ regray: stale }); break;
-      case 'targetWidth': case 'unit':
+      case 'dims':
         editor.defaultWidth = bridgeWidthPx(); updateDims(); updateCombined(); break;
     }
   } catch (err) { console.error(err); fail('Error: ' + err.message); }

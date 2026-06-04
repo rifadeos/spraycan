@@ -17,6 +17,8 @@ import { edgeMask } from '../src/edges.js';
 import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor, presetFromSignals } from '../src/presets.js';
 import { grayFromRGBA, isFlatGray } from '../src/grayfilters.js';
 import { buildMasks, buildBrightMask } from '../src/buildmasks.js';
+import { recomputePlan } from '../src/recomputePlan.js';
+import { layerToSVG, combinedSVG } from '../src/exporters/svg.js';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -536,4 +538,82 @@ test('buildMasks honours bridgeMode "none" (fill all islands, no ties)', () => {
   const g = gray(rows);
   const { layers } = buildMasks(g, autoThresholds(g, 3), { minFeature: 1, bridgeMode: 'none' });
   for (const L of layers) assert.equal(L.bridges.length, 0);
+});
+
+// --- recomputePlan (the onChange decision table, extracted + pinned) ----------
+
+test('recomputePlan: tone-mapping inputs re-gray + rebuild', () => {
+  for (const id of ['brightness', 'contrast', 'invert', 'smooth', 'autoLevels', 'mirror', 'vflip', 'maxResolution']) {
+    assert.deepEqual(recomputePlan(id, false), { action: 'pipeline', regray: true, recomputeThresholds: false });
+  }
+});
+
+test('recomputePlan: layers re-derives thresholds at full res', () => {
+  assert.deepEqual(recomputePlan('layers', false), { action: 'pipeline', regray: true, recomputeThresholds: true });
+});
+
+test('recomputePlan: mask-only inputs reuse gray unless a preview left it stale', () => {
+  for (const id of ['minFeature', 'bridgeMode', 'keepHighlights', 'edges', 'edgeAmount']) {
+    assert.equal(recomputePlan(id, false).regray, false, `${id} fresh → reuse gray`);
+    assert.equal(recomputePlan(id, true).regray, true, `${id} stale → re-gray`);
+    assert.equal(recomputePlan(id, false).recomputeThresholds, false);
+  }
+});
+
+test('recomputePlan: detail re-traces unless stale; preset/removeBg/dims route correctly', () => {
+  assert.equal(recomputePlan('detail', false).action, 'retrace');
+  assert.equal(recomputePlan('detail', true).action, 'pipeline');
+  assert.equal(recomputePlan('preset').action, 'preset');
+  assert.equal(recomputePlan('removeBg').action, 'removeBg');
+  assert.equal(recomputePlan('targetWidth').action, 'dims');
+  assert.equal(recomputePlan('unit').action, 'dims');
+  assert.equal(recomputePlan('material', true).action, 'material');
+  assert.equal(recomputePlan('bridgeWidth', false).action, 'bridgeWidth');
+  assert.equal(recomputePlan('somethingElse').action, 'none');
+});
+
+// --- SVG exporter (pure string generation; the live-DOM + cut-file sink) ------
+
+const TRACED = { width: 100, height: 80, paths: ['M0 0 L10 0 L10 10 Z', 'M20 20 L30 20 L30 30 Z'] };
+
+test('layerToSVG: viewBox in px, size in mm, paths + fill present', () => {
+  const svg = layerToSVG(TRACED, { widthMm: 200, heightMm: 160 }, { fill: '#abcdef' });
+  assert.match(svg, /viewBox="0 0 100 80"/);
+  assert.match(svg, /width="200mm"/);
+  assert.match(svg, /height="160mm"/);
+  assert.match(svg, /fill="#abcdef"/);
+  assert.ok(svg.includes('M0 0 L10 0 L10 10 Z'));
+});
+
+test('combinedSVG: one group per layer, each with its colour', () => {
+  const svg = combinedSVG([TRACED, TRACED], { widthMm: 200, heightMm: 160 }, { colors: ['#111111', '#222222'] });
+  assert.equal((svg.match(/fill-rule="evenodd"/g) || []).length, 2);
+  assert.match(svg, /fill="#111111"/);
+  assert.match(svg, /fill="#222222"/);
+});
+
+test('SVG fill is sanitised — a hostile colour cannot break out of the attribute', () => {
+  const evil = '"><script>alert(1)</script>';
+  const svg = combinedSVG([TRACED], { widthMm: 10, heightMm: 10 }, { colors: [evil] });
+  assert.ok(!svg.includes('<script'), 'no injected script tag');
+  assert.match(svg, /fill="#111111"/, 'hostile fill falls back to a safe colour');
+  const lyr = layerToSVG(TRACED, { widthMm: 10, heightMm: 10 }, { fill: evil });
+  assert.ok(!lyr.includes('<script'));
+});
+
+// --- worker/fallback parity (both run buildMasks; pin determinism) ------------
+
+test('buildMasks is deterministic — worker and main-thread fallback agree', () => {
+  const rows = [];
+  for (let y = 0; y < 20; y++) { const r = []; for (let x = 0; x < 20; x++) r.push((x * 12) % 256); rows.push(r); }
+  const g = gray(rows);
+  const th = autoThresholds(g, 4);
+  const opts = { minFeature: 1, bridgeMode: 'auto', bridgeWidthPx: 2, mmPerPx: 1, tieSpacingMm: 65 };
+  const a = buildMasks(g, th, opts);
+  const b = buildMasks(g, th, opts);
+  assert.equal(a.layers.length, b.layers.length);
+  for (let i = 0; i < a.layers.length; i++) {
+    assert.deepEqual(Array.from(a.layers[i].baseMask.data), Array.from(b.layers[i].baseMask.data), `layer ${i} mask identical`);
+    assert.equal(a.layers[i].bridges.length, b.layers[i].bridges.length);
+  }
 });
