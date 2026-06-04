@@ -213,8 +213,29 @@ export class LayerEditor {
     c.addEventListener('pointercancel', end);
 
     c.addEventListener('keydown', e => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected >= 0) { e.preventDefault(); this.removeSelected(); }
-      if (e.key === 'Escape') { this.pending = null; this.pendingEnd = null; this.setMode('select'); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this.selected >= 0) { e.preventDefault(); this.removeSelected(); return; }
+      if (e.key === 'Escape') { this.pending = null; this.pendingEnd = null; this.setMode('select'); return; }
+      if (e.key === 'Tab' && this.bridges.length) {           // cycle the selected tie
+        e.preventDefault();
+        const dir = e.shiftKey ? -1 : 1;
+        this.selected = this.selected < 0 ? (dir > 0 ? 0 : this.bridges.length - 1)
+          : (this.selected + dir + this.bridges.length) % this.bridges.length;
+        this.render();
+        return;
+      }
+      const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      if (arrows[e.key] && this.selected >= 0 && this.bridges[this.selected]) { // nudge the selected tie
+        e.preventDefault();
+        const [dx, dy] = arrows[e.key];
+        const step = (e.shiftKey ? 8 : 2) * (Math.max(this.maskW, this.maskH) / 600);
+        const b = this.bridges[this.selected];
+        this.onBeforeChange();
+        b.x1 = clamp(b.x1 + dx * step, 0, this.maskW); b.y1 = clamp(b.y1 + dy * step, 0, this.maskH);
+        b.x2 = clamp(b.x2 + dx * step, 0, this.maskW); b.y2 = clamp(b.y2 + dy * step, 0, this.maskH);
+        this.onBridgesChanged();
+        return;
+      }
+      if (e.key === 'a' || e.key === 'A') { this.setMode(this.mode === 'add' ? 'select' : 'add'); }
     });
   }
 }

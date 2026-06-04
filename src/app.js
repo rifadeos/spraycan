@@ -26,7 +26,7 @@ const els = {
   root: document.body, file: $('file'), sample: $('sample'), open: $('open'), thresholds: $('thresholds'),
   layers: $('layers'), minFeature: $('minFeature'), bridgeWidth: $('bridgeWidth'),
   targetWidth: $('targetWidth'), unit: $('unit'),
-  autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
+  autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'), undoBtn: $('undoBtn'), redoBtn: $('redoBtn'),
   exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'), presetReason: $('presetReason'),
@@ -39,7 +39,8 @@ const state = { img: null, gray: null, params: null, layers: [], colors: [], col
 let busyToken = 0;
 let genToken = 0;        // bumped on every new image; lets async chains bail when a newer upload supersedes them
 let eyedropMode = false; // true while "Pick from image" is armed (sampling a colour)
-const undoStack = []; // per-layer bridge snapshots for Cmd/Ctrl-Z
+const undoStack = []; // per-layer bridge snapshots for undo (Cmd/Ctrl-Z)
+const redoStack = []; // states undone, for redo (Cmd/Ctrl-Shift-Z)
 
 const editor = new LayerEditor(els.editor, {
   onBridgesChanged,
@@ -150,7 +151,7 @@ function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, layer.
 async function recomputeAll() {
   if (!state.gray) return;
   const my = ++busyToken;
-  undoStack.length = 0;
+  undoStack.length = 0; redoStack.length = 0; updateUndoButtons();
   try {
     busy('Building layers…'); await raf();
     const p = state.params;
@@ -327,12 +328,14 @@ function toggleExportMenu(open) {
   const show = (open === undefined) ? pop.hidden : open;
   pop.hidden = !show;
   els.exportBtn.setAttribute('aria-expanded', String(show));
+  if (show) { const first = pop.querySelector('button'); if (first) first.focus(); }
 }
 
 function setActive(i) {
   state.active = i;
   els.addBridge.classList.remove('active'); editor.setMode('select');
   refreshUI();
+  ready(`Layer ${i + 1} of ${state.layers.length} selected.`);
 }
 function setColor(i, hex, name = null) {
   if (i == null || i < 0 || !state.layers[i]) return;
@@ -393,22 +396,43 @@ async function toggleBackground() {
 }
 
 // ---- undo + eyedropper ----------------------------------------------------
-function pushUndo() {
-  const L = state.layers[state.active];
+function snapshot(layerIdx) {
+  const L = state.layers[layerIdx];
+  return L ? { layer: layerIdx, bridges: L.bridges.map(b => ({ ...b })) } : null;
+}
+function applySnapshot(s) {
+  const L = state.layers[s.layer];
   if (!L) return;
-  undoStack.push({ layer: state.active, bridges: L.bridges.map(b => ({ ...b })) });
+  L.bridges.length = 0; L.bridges.push(...s.bridges);
+  state.active = s.layer;
+  reburn(L); retrace(L);
+  refreshUI();
+}
+function updateUndoButtons() {
+  if (els.undoBtn) els.undoBtn.disabled = !undoStack.length;
+  if (els.redoBtn) els.redoBtn.disabled = !redoStack.length;
+}
+function pushUndo() {
+  const s = snapshot(state.active);
+  if (!s) return;
+  undoStack.push(s);
+  redoStack.length = 0;            // a fresh edit invalidates the redo trail
   if (undoStack.length > 60) undoStack.shift();
+  updateUndoButtons();
 }
 function undo() {
   const u = undoStack.pop();
   if (!u) { ready('Nothing to undo.'); return; }
-  const L = state.layers[u.layer];
-  if (!L) return;
-  L.bridges.length = 0; L.bridges.push(...u.bridges);
-  state.active = u.layer;
-  reburn(L); retrace(L);
-  refreshUI();
-  ready('Undid a bridge change.');
+  const cur = snapshot(u.layer); if (cur) redoStack.push(cur); // current (post-change) → redo
+  applySnapshot(u);
+  ready('Undid a bridge change.'); updateUndoButtons();
+}
+function redo() {
+  const r = redoStack.pop();
+  if (!r) { ready('Nothing to redo.'); return; }
+  const cur = snapshot(r.layer); if (cur) undoStack.push(cur);
+  applySnapshot(r);
+  ready('Redid a bridge change.'); updateUndoButtons();
 }
 function startEyedrop() {
   if (!state.layers.length) return;
@@ -789,6 +813,8 @@ function init() {
     editor.setMode(adding ? 'add' : 'select');
   });
   els.delBridge.addEventListener('click', () => editor.removeSelected());
+  if (els.undoBtn) els.undoBtn.addEventListener('click', undo);
+  if (els.redoBtn) els.redoBtn.addEventListener('click', redo);
 
   els.exportSvg.addEventListener('click', exportPerLayer);
   els.exportPdf.addEventListener('click', exportPDF);
@@ -803,14 +829,23 @@ function init() {
   document.addEventListener('click', e => { if (!els.exportMenu.contains(e.target)) toggleExportMenu(false); });
   els.exportSvg.addEventListener('click', () => toggleExportMenu(false));
   els.exportPdf.addEventListener('click', () => toggleExportMenu(false));
+  // Keyboard nav inside the open Export menu.
+  els.exportMenu.querySelector('.menu-pop').addEventListener('keydown', e => {
+    const items = [...els.exportMenu.querySelectorAll('.menu-pop button')];
+    const idx = items.indexOf(document.activeElement);
+    if (e.key === 'Escape') { e.preventDefault(); toggleExportMenu(false); els.exportBtn.focus(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); (items[(idx + 1) % items.length] || items[0]).focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); (items[(idx - 1 + items.length) % items.length] || items[0]).focus(); }
+  });
 
   document.addEventListener('keydown', e => {
-    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
-      const tag = (document.activeElement && document.activeElement.tagName) || '';
-      if (/^(INPUT|SELECT|TEXTAREA)$/.test(tag)) return;
-      if (!state.layers.length) return;
-      e.preventDefault(); undo();
-    }
+    if (!(e.metaKey || e.ctrlKey)) return;
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(tag)) return;
+    if (!state.layers.length) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
   });
 }
 

@@ -99,7 +99,7 @@
   <main class="app" id="root">
     <aside class="panel">
       <details class="group">
-        <summary class="group-head">1 · Image <span class="help" tabindex="0" role="img" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto recognises the image with a small on-device AI model (downloaded once) and picks the best fit; switch it or tweak the sliders. Everything runs on your device — your image is never uploaded.">?</span></summary>
+        <summary class="group-head">1 · Image <button type="button" class="help" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto recognises the image with a small on-device AI model (downloaded once) and picks the best fit; switch it or tweak the sliders. Everything runs on your device — your image is never uploaded.">?</button></summary>
         <label class="row">Preset
           <select id="preset" data-param>
             <option value="auto" selected>Auto (pick per image)</option>
@@ -118,7 +118,7 @@
       </details>
 
       <details class="group">
-        <summary class="group-head">2 · Adjust <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Adjust section">↺</button><span class="help" tabindex="0" role="img" aria-label="Adjust help" data-tip="Tune brightness, contrast, smoothing and line detail until the shapes read clearly. Invert, flip and auto-contrast live in the toolbar above.">?</span></summary>
+        <summary class="group-head">2 · Adjust <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Adjust section">↺</button><button type="button" class="help" aria-label="Adjust help" data-tip="Tune brightness, contrast, smoothing and line detail until the shapes read clearly. Invert, flip and auto-contrast live in the toolbar above.">?</button></summary>
         <label class="row">Brightness <span class="out" data-out="brightness">0</span>
           <input id="brightness" data-param type="range" min="-100" max="100" value="0" />
         </label>
@@ -134,7 +134,7 @@
       </details>
 
       <details class="group">
-        <summary class="group-head">3 · Layers <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Layers section">↺</button><span class="help" tabindex="0" role="img" aria-label="Layers help" data-tip="Each layer is one spray colour, light → dark. Simplify drops tiny specks and fills small islands so you get a few clean bridges instead of hundreds. Outline strength drives the optional Edge layer (toolbar). Keep highlights (toolbar) protects eyes/nose/teeth.">?</span></summary>
+        <summary class="group-head">3 · Layers <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Layers section">↺</button><button type="button" class="help" aria-label="Layers help" data-tip="Each layer is one spray colour, light → dark. Simplify drops tiny specks and fills small islands so you get a few clean bridges instead of hundreds. Outline strength drives the optional Edge layer (toolbar). Keep highlights (toolbar) protects eyes/nose/teeth.">?</button></summary>
         <label class="row">Layers / colours <span class="out" data-out="layers">2</span>
           <input id="layers" data-param type="range" min="1" max="6" value="2" />
         </label>
@@ -148,7 +148,7 @@
       </details>
 
       <details class="group">
-        <summary class="group-head">4 · Bridges <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Bridges section">↺</button><span class="help" tabindex="0" role="img" aria-label="Bridges help" data-tip="A bridge is a thin sliver of material left uncut to hold a floating piece — the middle of an O, the dot of an i — so it doesn't fall out when cut. SprayCan ties every island automatically, sized to the material and print size. To fine-tune: click a tie to select it, drag a handle or press Delete, or use + Add tie to draw your own.">?</span></summary>
+        <summary class="group-head">4 · Bridges <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Bridges section">↺</button><button type="button" class="help" aria-label="Bridges help" data-tip="A bridge is a thin sliver of material left uncut to hold a floating piece — the middle of an O, the dot of an i — so it doesn't fall out when cut. SprayCan ties every island automatically, sized to the material and print size. To fine-tune: click a tie to select it, drag a handle or press Delete, or use + Add tie to draw your own.">?</button></summary>
         <label class="row">Material / cut method
           <select id="material" data-param>
             <option value="mylar" selected>Mylar — general (2 mm ties)</option>
@@ -179,12 +179,20 @@
             <svg class="icn" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 6h10M8 6V4h4v2M6.5 6l.8 10h5.4l.8-10" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <span class="vh">Delete tie</span>
           </button>
+          <button id="undoBtn" type="button" class="icon-btn" data-tip="Undo (⌘/Ctrl-Z)" aria-label="Undo" disabled>
+            <svg class="icn" viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 7H13a4 4 0 0 1 0 8H8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.5 7 4.5 4M7.5 7 4.5 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="vh">Undo</span>
+          </button>
+          <button id="redoBtn" type="button" class="icon-btn" data-tip="Redo (⌘/Ctrl-Shift-Z)" aria-label="Redo" disabled>
+            <svg class="icn" viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 7H7a4 4 0 0 0 0 8h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.5 7 15.5 4M12.5 7 15.5 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="vh">Redo</span>
+          </button>
         </div>
         <p class="hint">Any island that still floats shows in <span style="color:var(--warn)">red</span>.</p>
       </details>
 
       <details class="group">
-        <summary class="group-head">5 · Output <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Output section">↺</button><span class="help" tabindex="0" role="img" aria-label="Output help" data-tip="Set the real-world width and a page size (used for the PDF cover and as a fallback). Export ▾ (toolbar) gives per-layer SVG cut files for a cutting machine, plus a PDF proof with one page per layer at true size.">?</span></summary>
+        <summary class="group-head">5 · Output <button type="button" class="sec-reset" title="Reset this section to defaults" aria-label="Reset Output section">↺</button><button type="button" class="help" aria-label="Output help" data-tip="Set the real-world width and a page size (used for the PDF cover and as a fallback). Export ▾ (toolbar) gives per-layer SVG cut files for a cutting machine, plus a PDF proof with one page per layer at true size.">?</button></summary>
         <label class="row">Target width
           <span class="size-input">
             <input id="targetWidth" data-param type="number" min="1" step="1" value="30" />
@@ -262,7 +270,7 @@
               <h3 class="canvas-h">Editing: <span id="activeLabel">—</span></h3>
               <div class="editor-wrap">
                 <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image or click Sample to start.</p>
-                <canvas id="editor" tabindex="0"></canvas>
+                <canvas id="editor" tabindex="0" role="img" aria-label="Cut preview for the active layer — click a tie to select it; arrow keys nudge it, Delete removes it, Tab cycles ties."></canvas>
               </div>
             </div>
             <div class="canvas-card">

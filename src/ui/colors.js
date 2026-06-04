@@ -31,11 +31,14 @@ export function buildColorPanel(container, opts) {
   const controls = el('div', 'cp-controls');
   const picker = document.createElement('input');
   picker.type = 'color'; picker.value = '#000000'; picker.title = 'Custom colour';
+  picker.setAttribute('aria-label', 'Custom colour for this layer');
   const hexInput = document.createElement('input');
   hexInput.type = 'text'; hexInput.className = 'cp-hex'; hexInput.placeholder = '#rrggbb';
   hexInput.spellcheck = false; hexInput.maxLength = 7;
+  hexInput.setAttribute('aria-label', 'Hex colour for this layer');
   const brand = document.createElement('select');
   brand.className = 'cp-brand';
+  brand.setAttribute('aria-label', 'Paint brand palette');
   palettes.forEach((p, i) => {
     const o = document.createElement('option');
     o.value = String(i); o.textContent = p.label;

@@ -6,8 +6,10 @@
 export function renderGuide(container, layers, colors, colorNames, activeIndex, handlers) {
   container.innerHTML = '';
   layers.forEach((layer, i) => {
-    const item = document.createElement('div');
+    const item = document.createElement('button');
+    item.type = 'button';
     item.className = 'guide-item' + (i === activeIndex ? ' active' : '');
+    item.setAttribute('aria-current', i === activeIndex ? 'true' : 'false');
 
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
