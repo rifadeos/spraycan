@@ -18,18 +18,6 @@ export function luminanceHistogram(gray) {
   return h;
 }
 
-export function luminanceRange(gray) {
-  let lo = 255, hi = 0;
-  const d = gray.data;
-  for (let i = 0; i < d.length; i++) {
-    const v = d[i];
-    if (v < lo) lo = v;
-    if (v > hi) hi = v;
-  }
-  if (lo > hi) { lo = 0; hi = 255; }
-  return { lo, hi };
-}
-
 // Multilevel Otsu thresholds: choose the K = `layers` boundaries that split the
 // histogram into K+1 tonal classes maximizing between-class variance — i.e. the
 // cleanest possible figure/ground separation. This is what makes a freshly

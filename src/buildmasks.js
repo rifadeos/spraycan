@@ -14,8 +14,8 @@ import { prepareIslands } from './bridges.js';
 import { edgeMask } from './edges.js';
 
 // Pixels at/above `thresh` are protected from being sprayed (kept as bare wall),
-// so highlights survive posterising. Portraits use a much lower threshold (passed
-// via keepHighlights upstream) so a face's mid-tones stay connected.
+// so highlights survive posterising. (The threshold is the same for portraits —
+// faces are protected instead via a larger island-fill span; see `portrait` below.)
 export function buildBrightMask(gray, thresh = 210) {
   const b = new Uint8Array(gray.data.length);
   for (let i = 0; i < b.length; i++) b[i] = gray.data[i] >= thresh ? 1 : 0;

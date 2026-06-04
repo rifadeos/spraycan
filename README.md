@@ -32,15 +32,15 @@ python3 -m http.server 8000      # then open http://localhost:8000
 # or:  npx serve .
 ```
 
-Click **Sample** in the toolbar to see it work immediately, or **Open image** to load your own.
+Click any **example** in the Image panel (left) to see it work immediately, or **Open image** to load your own.
 
 ## How to use
 
-The **toolbar** (top) holds the actions and image tools: Open image / Sample, the transform toggles
+The **toolbar** (top) holds the actions and image tools: Open image, the transform toggles
 (invert, flip H/V, auto-contrast, keep-highlights, edge layer), and the two Export buttons. The
 **left panel** holds the adjustment sliders, grouped into numbered sections.
 
-1. **Image** — Open image or Sample (toolbar). Optionally toggle Remove background.
+1. **Image** — Open image (toolbar), or click an example in this section to try it instantly. Optionally toggle Remove background.
 2. **Adjust** — brightness / contrast / smooth / line-detail sliders; invert / flip / auto-contrast from the toolbar.
 3. **Layers** — pick 1–6. Each layer is one spray colour; tune the per-tone sliders.
 4. **Bridges** — every floating island is **auto-tied** with enough physics-aware ties (count + width
@@ -55,7 +55,7 @@ crosshairs, and spray the **lightest layer first**, each darker layer on top.
 ## How it works (pipeline)
 
 `image → grayscale → posterize (nested thresholds) → despeckle → frame → island detection →
-auto-bridge → vectorize → SVG / tiled PDF`
+auto-bridge → vectorize → per-layer SVG + PDF proof`
 
 The image-processing core is plain, dependency-free functions over typed-array masks
 (`src/posterize.js`, `morphology.js`, `islands.js`, `bridges.js`) and is unit-tested headlessly:

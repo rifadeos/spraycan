@@ -131,7 +131,8 @@ async function coverPage(pdf, info) {
     pdf.setDrawColor(150); pdf.setFillColor(r, g, b); pdf.rect(margin, y - 3.4, 5.5, 4.6, 'FD');
     pdf.setTextColor(60);
     const label = (colorLabels && colorLabels[i]) || colors[i] || '#111111';
-    const lines = pdf.splitTextToSize(`${i + 1}. ${label} — ${L.bridges.length} tie(s)`, listRight - margin - 8);
+    const detail = L.isEdge ? 'outlines' : `${L.bridges.length} tie(s)`;
+    const lines = pdf.splitTextToSize(`${i + 1}. ${label} — ${detail}`, listRight - margin - 8);
     pdf.text(lines, margin + 8, y);
     y += 5.4 * lines.length + 0.6;
   });

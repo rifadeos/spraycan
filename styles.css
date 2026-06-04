@@ -26,6 +26,7 @@
   --muted: #b4bac3;    /* secondary text (lightened to clear WCAG AA ≥4.5:1 on the dark panels) */
   --accent: #d9a528;   /* mustard yellow — reserved for active / selected / primary */
   --accent-2: #efc94e; /* light mustard (highlight) */
+  --accent-hover: #e8b53a; /* primary-button hover (mustard, one step darker than --accent) */
   --warn: #ff5a52;
   --radius: 10px;      /* centre-stage cards — kept as-is */
 
@@ -243,7 +244,7 @@ button {
 }
 button:hover { background: var(--hover-2); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #16171a; font-weight: 600; }
-button.primary:hover { background: #e8b53a; border-color: #e8b53a; }
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .toggle-btn { width: 100%; margin-top: 4px; }

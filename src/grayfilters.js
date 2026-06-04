@@ -5,6 +5,9 @@
 
 import { clahe, bilateralFilter, flipHorizontal, flipVertical } from './filters.js';
 
+// Smoothing strength (0–3) → bilateral-filter radius in pixels.
+const BILATERAL_RADIUS_BY_SMOOTH = [0, 4, 6, 8];
+
 // rgba: Uint8ClampedArray (RGBA, length w*h*4). Returns the working-resolution
 // { width, height, data:Uint8ClampedArray } luminance buffer. This is byte-for-byte
 // the same computation imageToGray() used to do after getImageData().
@@ -19,7 +22,7 @@ export function grayFromRGBA(rgba, w, h, opts = {}) {
     data[p] = lum; // Uint8ClampedArray clamps to 0..255
   }
   let gray = { width: w, height: h, data };
-  if (smooth > 0) gray = bilateralFilter(gray, { radius: [0, 4, 6, 8][smooth] ?? 6, sigmaR: 40 }); // flatten texture, keep edges
+  if (smooth > 0) gray = bilateralFilter(gray, { radius: BILATERAL_RADIUS_BY_SMOOTH[smooth] ?? 6, sigmaR: 40 }); // flatten texture, keep edges
   if (autoLevels) gray = clahe(gray);                    // local-contrast equalize → detail in mid-tones
   if (mirror) gray = flipHorizontal(gray);               // back-cut / reverse stencil
   if (vflip) gray = flipVertical(gray);                  // top/bottom flip

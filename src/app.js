@@ -31,8 +31,8 @@ const els = {
   exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportPng: $('exportPng'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'), presetReason: $('presetReason'),
-  stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
-  srcPreview: $('srcPreview'), srcCard: $('srcCard'), srcUpload: $('srcUpload'),
+  canvasFrame: document.querySelector('.canvas-frame'),
+  srcPreview: $('srcPreview'), srcUpload: $('srcUpload'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'), themeToggle: $('themeToggle'),
 };
 
@@ -46,7 +46,7 @@ const redoStack = []; // states undone, for redo (Cmd/Ctrl-Shift-Z)
 const editor = new LayerEditor(els.editor, {
   onBridgesChanged,
   onBeforeChange: () => pushUndo(),
-  onSample: (x, y) => { const hex = sampleImageColor(x, y); if (hex) { setColor(state.active, hex, 'Sampled'); ready(`Sampled ${hex} for layer ${state.active + 1}.`); } endEyedrop(); },
+  onSample: (x, y) => { applySample(sampleImageColor(x, y)); },
 });
 
 // ---- status helpers -------------------------------------------------------
@@ -111,14 +111,23 @@ function getWorker() {
       if (r) { _pending.delete(e.data.id); r.resolve(e.data); }
     };
     _worker.onerror = () => {                 // fall back permanently; reject anything in flight
+      noteWorkerFallback();
       _workerBroken = true;
       for (const [, r] of _pending) r.reject(new Error('pipeline worker error'));
       _pending.clear();
       try { _worker.terminate(); } catch {}
       _worker = null;
     };
-  } catch { _workerBroken = true; _worker = null; }
+  } catch { noteWorkerFallback(); _workerBroken = true; _worker = null; }
   return _worker;
+}
+// Tell the developer console once when we permanently drop to the main-thread
+// pipeline (e.g. a worker OOM on a low-memory device) — drags get less smooth.
+let _workerWarned = false;
+function noteWorkerFallback() {
+  if (_workerWarned) return;
+  _workerWarned = true;
+  console.warn('SprayCan: off-thread pipeline worker unavailable — running on the main thread (drags may be less smooth). Reload to retry.');
 }
 function runOnWorker(payload) {
   const w = getWorker();
@@ -170,12 +179,14 @@ function reburn(layer) {
   for (let i = 0; i < fm.length; i++) fm[i] = islandMask.data[i] === 0 ? 1 : 0;
   layer.floatingMask = fm;
 }
-// Line-detail → vectoriser fidelity. Higher detail keeps smaller features
-// (lower pathomit) and truer curves (lower ltres/qtres).
+// Line-detail (0–3) → vectoriser fidelity. Higher detail keeps smaller features
+// (lower pathomit) and truer curves (lower ltres/qtres). Tables, indexed by detail:
+const PATHOMIT_BY_DETAIL = [16, 9, 4, 1];        // drop more tiny specks at lower detail
+const TRACE_TOL_BY_DETAIL = [1.4, 1.0, 0.7, 0.4]; // higher = smoother Bézier fit; lower = more faithful to pixels
 function traceOpts() {
   const d = state.params ? state.params.detail : 2;
-  const pathomit = [16, 9, 4, 1][d] ?? 4;       // drop more tiny specks at lower detail
-  const tol = [1.4, 1.0, 0.7, 0.4][d] ?? 0.8;   // higher = smoother Bézier fit; lower = more faithful to pixels
+  const pathomit = PATHOMIT_BY_DETAIL[d] ?? 4;
+  const tol = TRACE_TOL_BY_DETAIL[d] ?? 0.8;
   return { pathomit, ltres: tol, qtres: tol };
 }
 function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, layer.isEdge ? { pathomit: 8 } : traceOpts()); }
@@ -188,8 +199,8 @@ function retrace(layer) { layer.traced = traceMaskToPaths(layer.workMask, layer.
 async function runPipeline({ regray = true, recomputeThresholds = false, maxResolution } = {}) {
   if (!state.img) return;
   const p = state.params;
-  const my = ++busyToken;
-  undoStack.length = 0; redoStack.length = 0; updateUndoButtons();
+  const my = ++busyToken, myGen = genToken;   // supersede on a newer recompute OR a newer image
+  const prevLayerCount = state.layers.length;
   try {
     busy('Building layers…'); await raf();
     // --- assemble inputs on the main thread (canvas I/O only) ---
@@ -213,7 +224,7 @@ async function runPipeline({ regray = true, recomputeThresholds = false, maxReso
     let res;
     try { res = await runOnWorker(payload); if (!res || !res.ok) throw new Error((res && res.error) || 'worker failed'); }
     catch { res = computeMainThread(payload); }
-    if (my !== busyToken) return;                   // a newer change superseded this run — leave state untouched
+    if (my !== busyToken || myGen !== genToken) return;   // a newer recompute or image superseded this run — leave state untouched
 
     // --- commit gray + thresholds (main thread) ---
     if (res.gray) state.gray = { width: res.gray.width, height: res.gray.height, data: res.gray.data instanceof Uint8ClampedArray ? res.gray.data : new Uint8ClampedArray(res.gray.data) };
@@ -228,7 +239,7 @@ async function runPipeline({ regray = true, recomputeThresholds = false, maxReso
     const built = res.layers;
     const newLayers = [];
     for (let i = 0; i < built.length; i++) {
-      if (my !== busyToken) return;
+      if (my !== busyToken || myGen !== genToken) return;
       const layer = { order: i, threshold: built[i].threshold, baseMask: asMask(built[i].baseMask), bridges: built[i].bridges || [], workMask: null, floatingMask: null, traced: null };
       reburn(layer); retrace(layer);
       newLayers.push(layer);
@@ -240,7 +251,7 @@ async function runPipeline({ regray = true, recomputeThresholds = false, maxReso
       const layer = { order: newLayers.length, threshold: -1, isEdge: true, baseMask: asMask(res.edge.baseMask), bridges: [], workMask: null, floatingMask: null, traced: null };
       reburn(layer); retrace(layer); newLayers.push(layer);
     }
-    if (my !== busyToken) return;   // final supersession check before the atomic commit
+    if (my !== busyToken || myGen !== genToken) return;   // final supersession check before the atomic commit
     state.layers = newLayers;       // commit
     if (state.colors.length !== state.layers.length) {
       state.colors = defaultColors(tonalN);
@@ -248,6 +259,11 @@ async function runPipeline({ regray = true, recomputeThresholds = false, maxReso
       if (p.edges) { state.colors.push('#161616'); state.colorNames.push('Edge lines'); }
     }
     state.active = Math.max(0, Math.min(state.active, state.layers.length - 1));
+    // Bridge undo/redo is keyed by layer index, so only reset it when the layer
+    // COUNT actually changes (new image / layer slider / edges toggle) — not on
+    // every brightness/threshold tweak or transient drag-preview run.
+    if (state.layers.length !== prevLayerCount) { undoStack.length = 0; redoStack.length = 0; }
+    updateUndoButtons();
     refreshUI();
     if (state.grayFlat) {
       els.status.textContent = 'Heads-up: this image is almost one flat tone — adjust Brightness/Contrast, or try a different image.';
@@ -487,6 +503,14 @@ function endEyedrop() {
   if (els.srcPreview) els.srcPreview.style.cursor = '';
   editor.setMode('select');
 }
+// Apply a sampled colour to the active layer + clear the eyedropper. Shared by the
+// editor-canvas (onSample) and Original-preview sampling paths.
+function applySample(hex) {
+  if (!hex) { endEyedrop(); return; }
+  setColor(state.active, hex, 'Sampled');
+  endEyedrop();
+  ready(`Sampled ${hex} for layer ${state.active + 1}.`);
+}
 // Sample a colour straight from the colour Original preview (the obvious "image").
 function sampleFromSrcPreview(e) {
   const cv = els.srcPreview;
@@ -496,10 +520,7 @@ function sampleFromSrcPreview(e) {
   const y = Math.max(0, Math.min(cv.height - 1, Math.round((e.clientY - r.top) / r.height * cv.height)));
   try {
     const d = cv.getContext('2d').getImageData(x, y, 1, 1).data;
-    const hex = '#' + [d[0], d[1], d[2]].map(n => n.toString(16).padStart(2, '0')).join('');
-    setColor(state.active, hex, 'Sampled');
-    endEyedrop();
-    ready(`Sampled ${hex} for layer ${state.active + 1}.`);
+    applySample('#' + [d[0], d[1], d[2]].map(n => n.toString(16).padStart(2, '0')).join(''));
   } catch { endEyedrop(); fail('Could not sample that pixel.'); }
 }
 
@@ -597,6 +618,7 @@ async function applyPreset(id) {
 function setPresetReason(text) { if (els.presetReason) els.presetReason.textContent = text || ''; }
 
 async function pickPresetForImage(img) {
+  const myGen = genToken;   // skip stale DOM writes if a newer image supersedes us mid-analysis
   const sel = els.preset ? els.preset.value : 'auto';
   if (sel !== 'auto') { if (els.preset) els.preset.title = ''; setPresetReason(''); return sel; }
   // Cheap colour/tone stats are always available (logo signal + offline fallback).
@@ -617,14 +639,12 @@ async function pickPresetForImage(img) {
         : (id === 'subject' && top1) ? top1
         : '';
       const label = (PRESETS[id]?.label || id) + (why ? ` — ${why}` : '');
-      if (els.preset) els.preset.title = 'AI: ' + label;
-      setPresetReason('AI · ' + label);
+      if (myGen === genToken) { if (els.preset) els.preset.title = 'AI: ' + label; setPresetReason('AI · ' + label); }
       return id;
     }
   } catch (e) { console.warn('Auto (AI) recognition unavailable — using the colour heuristic:', e); }
   const id = pickPreset(stats);
-  if (els.preset) els.preset.title = 'Auto: ' + (PRESETS[id]?.label || id);
-  setPresetReason('Auto · ' + (PRESETS[id]?.label || id));
+  if (myGen === genToken) { if (els.preset) els.preset.title = 'Auto: ' + (PRESETS[id]?.label || id); setPresetReason('Auto · ' + (PRESETS[id]?.label || id)); }
   return id;
 }
 

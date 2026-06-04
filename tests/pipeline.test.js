@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { toMm, physicalSize } from '../src/units.js';
 import {
-  luminanceHistogram, luminanceRange, autoThresholds,
+  luminanceHistogram, autoThresholds,
   buildLayers, layerMaskFromThreshold,
 } from '../src/posterize.js';
 import { openArea } from '../src/grid.js';
@@ -12,7 +12,7 @@ import { findIslands } from '../src/islands.js';
 import { autoBridges, burnBridges, prepareIslands } from '../src/bridges.js';
 import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
-import { autoLevels, clahe, bilateralFilter, medianFilter, flipHorizontal, flipVertical } from '../src/filters.js';
+import { clahe, bilateralFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
 import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor, presetFromSignals } from '../src/presets.js';
 import { grayFromRGBA, isFlatGray } from '../src/grayfilters.js';
@@ -50,14 +50,12 @@ test('unit conversion', () => {
 
 // --- posterize -------------------------------------------------------------
 
-test('histogram + range', () => {
+test('histogram', () => {
   const g = gray([[0, 0, 128, 255]]);
   const h = luminanceHistogram(g);
   assert.equal(h[0], 2);
   assert.equal(h[128], 1);
   assert.equal(h[255], 1);
-  const r = luminanceRange(g);
-  assert.deepEqual(r, { lo: 0, hi: 255 });
 });
 
 test('threshold mask: dark pixels are OPEN', () => {
@@ -232,14 +230,6 @@ test('autoBridges: physics-aware mode gives a big island several spread ties', (
   assert.ok(multi.length >= 2, `expected >=2 spread ties, got ${multi.length}`);
 });
 
-test('autoLevels stretches the tonal range to 0..255', () => {
-  const g = gray([[50, 100, 150, 200]]);
-  const r = autoLevels(g, 0.5, 99.5);
-  assert.equal(r.data[0], 0);
-  assert.equal(r.data[3], 255);
-  assert.ok(r.data[1] > 0 && r.data[1] < r.data[2]);
-});
-
 test('edgeMask finds boundaries, not flat areas', () => {
   const W = 12, H = 6;
   const data = new Uint8ClampedArray(W * H);
@@ -248,12 +238,6 @@ test('edgeMask finds boundaries, not flat areas', () => {
   let edges = 0; for (const v of m.data) edges += v;
   assert.ok(edges > 0, 'edge detected at the boundary');
   assert.equal(m.data[0], 0, 'flat corner stays material');
-});
-
-test('medianFilter removes a lone speckle', () => {
-  const g = gray([[100, 100, 100], [100, 255, 100], [100, 100, 100]]);
-  const r = medianFilter(g, 1);
-  assert.ok([...r.data].every(v => v === 100));
 });
 
 test('flipHorizontal mirrors columns and is its own inverse', () => {

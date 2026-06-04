@@ -23,10 +23,6 @@ export function cloneMask(mask) {
   return { width: mask.width, height: mask.height, data: Uint8Array.from(mask.data) };
 }
 
-export function inBounds(x, y, width, height) {
-  return x >= 0 && y >= 0 && x < width && y < height;
-}
-
 // Count OPEN pixels (handy for tests + "how much gets sprayed" stats).
 export function openArea(mask) {
   const d = mask.data;
