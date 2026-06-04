@@ -249,6 +249,22 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .toggle-btn { width: 100%; margin-top: 4px; }
 .toggle-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); }
 .toggle-btn.active::before { content: "✓ "; }
+
+/* "Try an example" gallery — before→after cards (hover crossfades to the stencil) */
+.examples { margin-top: 9px; }
+.examples-label { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0 1px 6px; }
+.examples-hint { font-weight: 400; opacity: .8; }
+.examples-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ex-card { display: flex; flex-direction: column; gap: 4px; padding: 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); cursor: pointer; }
+.ex-card:hover { border-color: var(--accent); background: var(--hover); }
+.ex-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ex-thumb { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: calc(var(--r) - 2px); overflow: hidden; background: #16171a; }
+.ex-thumb > .ex-before, .ex-thumb > .ex-after { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ex-before { object-fit: cover; display: block; }
+.ex-after { display: grid; place-items: center; background: #efe9df; opacity: 0; transition: opacity .22s ease; } /* paper/wall: dark spray reads on light, like a real stencil */
+.ex-after svg { width: 100%; height: 100%; display: block; }
+.ex-card:hover .ex-after, .ex-card:focus-visible .ex-after { opacity: 1; }
+.ex-name { font-size: 11px; font-weight: 600; color: var(--ink); text-align: center; }
 .ai-field { width: 100%; margin-top: 6px; }
 
 /* Bottom status + zoom bar (like a pro app's footer) */

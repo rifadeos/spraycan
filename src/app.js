@@ -20,10 +20,11 @@ import { renderGuide } from './ui/guide.js';
 import { PRESETS, imageStats, pickPreset, analyzeColor, presetFromSignals } from './presets.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
+import { EXAMPLES } from './examples.js';
 
 const $ = id => document.getElementById(id);
 const els = {
-  root: document.body, file: $('file'), sample: $('sample'), open: $('open'), thresholds: $('thresholds'),
+  root: document.body, file: $('file'), open: $('open'), examplesGrid: $('examplesGrid'), thresholds: $('thresholds'),
   layers: $('layers'), minFeature: $('minFeature'), bridgeWidth: $('bridgeWidth'),
   targetWidth: $('targetWidth'), unit: $('unit'),
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'), undoBtn: $('undoBtn'), redoBtn: $('redoBtn'),
@@ -801,20 +802,52 @@ async function useImage(img) {
   await applyPreset(id);
 }
 
-// A built-in demo (concentric tones + enclosed islands) so the tool can be
-// tried without a file. Drawn on a canvas, which doubles as an <img> source.
-function loadSample() {
-  const c = document.createElement('canvas'); c.width = c.height = 600;
-  const x = c.getContext('2d');
-  x.fillStyle = '#ffffff'; x.fillRect(0, 0, 600, 600);
-  const disc = (r, color) => { x.fillStyle = color; x.beginPath(); x.arc(300, 300, r, 0, Math.PI * 2); x.fill(); };
-  disc(250, '#111111');  // outer ring (dark)
-  disc(200, '#ffffff');  // gap -> makes the dark ring an island former
-  disc(150, '#777777');  // mid-tone disc
-  disc(95, '#ffffff');   // gap
-  disc(48, '#111111');   // centre dot (enclosed island)
-  busy('Loading sample…');
-  useImage(c).catch(err => fail('Sample failed: ' + err.message));
+// Render a small stencil preview (the "after") for a gallery card, reusing the
+// pure pipeline functions at low resolution. Returns an SVG string, '' on failure.
+function stencilThumb(srcCanvas, maxRes = 200) {
+  try {
+    const { w, h } = fitSize(srcCanvas.width, srcCanvas.height, maxRes);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(srcCanvas, 0, 0, w, h);
+    const gray = grayFromRGBA(ctx.getImageData(0, 0, w, h).data, w, h, { autoLevels: true });
+    const { layers } = buildMasks(gray, autoThresholds(gray, 4), { minFeature: 1, bridgeMode: 'auto', bridgeWidthPx: 2, mmPerPx: 1, tieSpacingMm: 65 });
+    const traced = layers.map(L => traceMaskToPaths(L.baseMask, { pathomit: 8, ltres: 1, qtres: 1 }));
+    return combinedSVG(traced, { widthMm: w, heightMm: h, mmPerPx: 1 }, { colors: defaultColors(layers.length) }).replace(/^<\?xml[^>]*\?>\s*/, '');
+  } catch { return ''; }
+}
+
+// Build the "try an example" gallery. Each card shows the original (before) and
+// crossfades to its stencil (after) on hover; clicking loads it on its preset.
+function buildExamples() {
+  if (!els.examplesGrid) return;
+  els.examplesGrid.innerHTML = '';
+  const cards = EXAMPLES.map(ex => {
+    const card = document.createElement('button');
+    card.type = 'button'; card.className = 'ex-card'; card.title = `Try the ${ex.label} example`;
+    const thumb = document.createElement('span'); thumb.className = 'ex-thumb';
+    const before = ex.draw(180); before.className = 'ex-before'; before.setAttribute('aria-hidden', 'true');
+    const after = document.createElement('span'); after.className = 'ex-after';
+    thumb.append(before, after);
+    const name = document.createElement('span'); name.className = 'ex-name'; name.textContent = ex.label;
+    card.append(thumb, name);
+    card.addEventListener('click', () => {
+      if (els.preset) els.preset.value = ex.preset;          // land on the intended route instantly (no ML guess)
+      busy(`Loading ${ex.label} example…`);
+      useImage(ex.draw(600)).catch(err => fail('Example failed: ' + err.message));
+    });
+    els.examplesGrid.appendChild(card);
+    return { ex, after };
+  });
+  // Render the stencil "after" previews after first paint so they don't block init.
+  setTimeout(() => {
+    for (const { ex, after } of cards) {
+      const svg = stencilThumb(ex.draw(360));
+      if (!svg) continue;
+      after.innerHTML = svg;
+      const n = after.querySelector('svg'); if (n) { n.removeAttribute('width'); n.removeAttribute('height'); }
+    }
+  }, 60);
 }
 
 // Light/dark theme (persisted; respects the OS preference on first visit).
@@ -866,7 +899,7 @@ function init() {
     try { await useImage(await fileToImage(f)); }
     catch (err) { fail('Could not load image: ' + err.message); }
   });
-  els.sample.addEventListener('click', loadSample);
+  buildExamples();
   els.open.addEventListener('click', () => els.file.click());
   els.srcUpload.addEventListener('click', () => els.file.click());
   els.srcPreview.addEventListener('click', e => {

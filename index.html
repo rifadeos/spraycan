@@ -46,7 +46,6 @@
     <div class="toolbar">
       <div class="tool-group">
         <button id="open" type="button" class="tbtn">Open image</button>
-        <button id="sample" type="button" class="tbtn">Sample</button>
         <input id="file" type="file" accept="image/*" class="vh" aria-label="Choose an image file" />
       </div>
 
@@ -103,7 +102,7 @@
   <main class="app" id="root">
     <aside class="panel">
       <details class="group">
-        <summary class="group-head">1 · Image <button type="button" class="help" aria-label="Image help" data-tip="Load with Open image or Sample (toolbar). The Preset tunes everything for you — Auto recognises the image with a small on-device AI model (downloaded once) and picks the best fit; switch it or tweak the sliders. Everything runs on your device — your image is never uploaded.">?</button></summary>
+        <summary class="group-head">1 · Image <button type="button" class="help" aria-label="Image help" data-tip="Load with Open image (toolbar), or click an example below to try the tool instantly. The Preset tunes everything for you — Auto recognises the image with a small on-device AI model (downloaded once) and picks the best fit; switch it or tweak the sliders. Everything runs on your device — your image is never uploaded.">?</button></summary>
         <label class="row">Preset
           <select id="preset" data-param>
             <option value="auto" selected>Auto (pick per image)</option>
@@ -119,6 +118,10 @@
         <small id="presetReason" class="preset-reason" aria-live="polite"></small>
         <button id="removeBgBtn" type="button" class="toggle-btn" aria-pressed="false" title="Isolates the subject with an in-browser model. First use downloads it (needs internet); after that it runs on your device.">Remove background</button>
         <input id="removeBg" data-param type="checkbox" class="vh" />
+        <div class="examples" id="examples">
+          <div class="examples-label">Or try an example <span class="examples-hint">(hover to preview · click to load)</span></div>
+          <div class="examples-grid" id="examplesGrid" role="group" aria-label="Example images"></div>
+        </div>
       </details>
 
       <details class="group">
@@ -273,7 +276,7 @@
             <div class="canvas-card">
               <h3 class="canvas-h">Editing: <span id="activeLabel">—</span></h3>
               <div class="editor-wrap">
-                <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image or click Sample to start.</p>
+                <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image, or try an example from the Image panel.</p>
                 <canvas id="editor" tabindex="0" role="img" aria-label="Cut preview for the active layer — click a tie to select it; arrow keys nudge it, Delete removes it, Tab cycles ties."></canvas>
               </div>
             </div>
