@@ -154,12 +154,17 @@ function computeMainThread(payload) {
 }
 // Draw the working image (bg-removed base or original) at `maxResolution` and read
 // back its RGBA — the one piece that must stay on the main thread (needs a canvas).
+// Reuses one scratch canvas across recomputes (getImageData returns an independent
+// copy, so the returned ImageData is unaffected by the next reuse).
+let _scratch = null;
 function drawWorkingRGBA(maxResolution) {
   const src = state.processedImg || state.img;
   const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
   const { w, h } = fitSize(sw, sh, maxResolution);
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const c = _scratch || (_scratch = document.createElement('canvas'));
+  c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.clearRect(0, 0, w, h);
   ctx.drawImage(src, 0, 0, w, h);
   return ctx.getImageData(0, 0, w, h);     // ImageData at working resolution (also the eyedropper source)
 }
@@ -401,9 +406,17 @@ function setColor(i, hex, name = null) {
   if (i == null || i < 0 || !state.layers[i]) return;
   state.colors[i] = hex;
   state.colorNames[i] = name || findPaintName(hex);
-  renderGuide(els.guide, state.layers, state.colors, state.colorNames, state.active, { onSelect: setActive });
+  // In-place updates — a colour pick changes no geometry, so patch just this layer's
+  // guide swatch/label + the one SVG group's fill, instead of rebuilding the whole
+  // guide DOM and re-serialising the entire combined SVG on every (live) pick.
+  const item = els.guide.children[i];
+  if (item) {
+    const sw = item.querySelector('.swatch'); if (sw) sw.style.background = hex;
+    const small = item.querySelector('small'); if (small) small.textContent = state.colorNames[i] || `spray ${i + 1} of ${state.layers.length}`;
+  }
+  const svg = els.combined.querySelector('svg');
+  if (svg) { const g = svg.querySelectorAll('g[fill-rule="evenodd"]')[i]; if (g) g.setAttribute('fill', hex); }
   if (i === state.active) setColorPanelValue(state.colors[i], state.colorNames[i], nearestCanLabel(state.colors[i]));
-  updateCombined();
 }
 
 // editor commit (drag / add / delete) — recompute just the active layer
@@ -865,15 +878,21 @@ function buildExamples() {
     els.examplesGrid.appendChild(card);
     return { ex, after };
   });
-  // Render the stencil "after" previews after first paint so they don't block init.
-  setTimeout(() => {
+  // Generate the stencil "after" previews lazily — only once the Image panel is open
+  // (skipped entirely for returning users who leave it closed), yielding between cards
+  // so these 4 mini-pipelines never block the first interaction.
+  let generated = false;
+  const genThumbs = async () => {
+    if (generated) return; generated = true;
     for (const { ex, after } of cards) {
       const svg = stencilThumb(ex.draw(360));
-      if (!svg) continue;
-      after.innerHTML = svg;
-      const n = after.querySelector('svg'); if (n) { n.removeAttribute('width'); n.removeAttribute('height'); }
+      if (svg) { after.innerHTML = svg; const n = after.querySelector('svg'); if (n) { n.removeAttribute('width'); n.removeAttribute('height'); } }
+      await raf();   // yield between cards
     }
-  }, 60);
+  };
+  const grp = els.examplesGrid.closest('details.group');
+  if (grp && !grp.open) grp.addEventListener('toggle', () => { if (grp.open) genThumbs(); });
+  else setTimeout(genThumbs, 60);   // panel already open (first visit) → after first paint
 }
 
 // Light/dark theme (persisted; respects the OS preference on first visit).
@@ -1003,6 +1022,11 @@ function init() {
     if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
     else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
   });
+
+  // Warm the pipeline worker during idle so the first stencil doesn't pay the
+  // worker-spawn + module-parse latency on the critical path.
+  const warm = () => { try { getWorker(); } catch {} };
+  if ('requestIdleCallback' in window) requestIdleCallback(warm, { timeout: 2000 }); else setTimeout(warm, 300);
 }
 
 init();

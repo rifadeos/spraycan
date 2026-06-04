@@ -7,6 +7,10 @@
   <meta name="description" content="SprayCan turns any image into a layered, cuttable spray-paint stencil — sized to print, ready to cut and spray. Runs in your browser: Auto recognises the image with a small on-device AI model and background removal runs on-device too (models download once; your image is never uploaded)." />
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
   <meta name="theme-color" content="#16171a" />
+  <!-- Preload the module graph so the import chain isn't a discovery waterfall on first load. -->
+  <link rel="modulepreload" href="src/app.js" />
+  <link rel="modulepreload" href="src/pipeline.worker.js" />
+  <link rel="modulepreload" href="src/buildmasks.js" />
   <link rel="canonical" href="https://rifadeos.github.io/spraycan/" />
 
   <!-- Open Graph / social link preview -->
@@ -314,7 +318,7 @@
     </div>
   </footer>
 
-  <script src="vendor/imagetracer.js"></script>
+  <script defer src="vendor/imagetracer.js"></script>
   <!-- jsPDF, svg2pdf and JSZip load on demand at export time (see src/vendor.js) — faster page load. -->
   <script type="module" src="src/app.js"></script>
 </body>
