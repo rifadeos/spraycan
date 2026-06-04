@@ -51,6 +51,7 @@
   --hover: rgba(0,0,0,.045);
   --hover-2: rgba(0,0,0,.075);
   --accent-soft: rgba(217,165,40,.22);
+  --accent-2: #8a6a10;  /* darken the mustard used as TEXT (preset reason, busy status, active labels, nearest-can) so it clears WCAG AA ≥4.5:1 on white; the bright accent stays for fills/brand */
 }
 :root[data-theme="light"] .editor-wrap,
 :root[data-theme="light"] .preview-wrap {
@@ -70,7 +71,7 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 }
 .brand { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .brand-mark { width: 24px; height: 24px; display: block; flex: 0 0 auto; }
-.brand-name { font-weight: 700; font-size: 16px; letter-spacing: .2px; }
+.brand-name { font-weight: 700; font-size: 16px; letter-spacing: .2px; margin: 0; line-height: 1.1; } /* also the page <h1> */
 
 /* Top toolbar (Illustrator-style): actions + tool icons + export */
 .toolbar { display: flex; align-items: center; gap: 12px; flex: 1 1 auto; flex-wrap: wrap; }
@@ -96,6 +97,25 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
   .step { width: 28px; height: 28px; }
   .zbtn { padding: 7px 11px; }
 }
+
+/* Respect reduced-motion: kill transitions/animations (the gallery before→after
+   crossfade snaps instead of fading — no information lost). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .001ms !important; animation-duration: .001ms !important; scroll-behavior: auto !important; }
+}
+/* Windows High Contrast / forced-colors: the accent fill is flattened there, so
+   give active/selected states a border that survives. */
+@media (forced-colors: active) {
+  .icon-toggle:has(input:checked), .icon-btn.active, button.active, .toggle-btn.active,
+  .guide-item.active, .ex-card:focus-visible { outline: 2px solid Highlight; outline-offset: 1px; }
+}
+/* Pointer-aware example-gallery hint (touch has no hover; the result still shows
+   in the main Stacked-preview after a tap). */
+.hint-coarse { display: none; }
+@media (hover: none) { .hint-fine { display: none; } .hint-coarse { display: inline; } }
+/* Skip link — first focusable element, visible only on focus. */
+.skip-link { position: absolute; left: 8px; top: -44px; z-index: 60; background: var(--panel-3); color: var(--ink); border: 1px solid var(--accent); border-radius: var(--r); padding: 7px 11px; font-size: 12px; transition: top .15s ease; }
+.skip-link:focus { top: 8px; outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---- control panel ---- */
 .panel {
@@ -175,7 +195,7 @@ input.out::-webkit-inner-spin-button, input.out::-webkit-outer-spin-button { -we
 .icon-btn[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* Per-section reset (↺) at the right of the header, before the help "?" */
-.sec-reset { margin-left: auto; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel-2); color: var(--muted); font-size: 12px; line-height: 1; cursor: pointer; flex: 0 0 auto; transition: border-color .12s, color .12s; }
+.sec-reset { margin-left: auto; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--panel-2); color: var(--muted); font-size: 12px; line-height: 1; cursor: pointer; flex: 0 0 auto; transition: border-color .12s, color .12s; }
 .sec-reset:hover { color: var(--ink); border-color: var(--accent); }
 .sec-reset:active { transform: rotate(-45deg); }
 
@@ -184,7 +204,7 @@ input.out::-webkit-inner-spin-button, input.out::-webkit-outer-spin-button { -we
 .group-head .sec-reset + .help { margin-left: 0; } /* sec-reset owns the auto margin */
 .help {
   position: relative; display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line);
+  width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line);
   background: var(--panel-2); color: var(--muted); font: 700 10px inherit; cursor: help; flex: 0 0 auto; padding: 0;
 }
 .help:hover, .help:focus-visible { color: var(--ink); border-color: var(--accent); outline: none; }
@@ -273,6 +293,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .status { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .status.busy { color: var(--accent-2); }
 .status.error { color: var(--warn); }
+/* Warnings/errors are often long + actionable — let them wrap instead of truncating. */
+.status.busy, .status.error { white-space: normal; overflow: visible; text-overflow: clip; }
 .zoombar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .zbtn { flex: 0 0 auto; padding: 4px 9px; font-size: 12px; min-width: 30px; }
 .zoom-label { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 44px; text-align: center; }

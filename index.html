@@ -29,6 +29,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <a href="#stage-main" class="skip-link">Skip to canvas</a>
   <header class="topbar">
     <div class="brand">
       <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
@@ -40,7 +41,7 @@
         <rect x="5" y="6.4" width="9" height="15" rx="2.4" fill="var(--ink)" />
         <rect x="5" y="11.4" width="9" height="3" fill="var(--accent)" />
       </svg>
-      <span class="brand-name">SprayCan</span>
+      <h1 class="brand-name">SprayCan</h1>
     </div>
 
     <div class="toolbar">
@@ -119,7 +120,7 @@
         <button id="removeBgBtn" type="button" class="toggle-btn" aria-pressed="false" title="Isolates the subject with an in-browser model. First use downloads it (needs internet); after that it runs on your device.">Remove background</button>
         <input id="removeBg" data-param type="checkbox" class="vh" />
         <div class="examples" id="examples">
-          <div class="examples-label">Or try an example <span class="examples-hint">(hover to preview · click to load)</span></div>
+          <div class="examples-label">Or try an example <span class="examples-hint"><span class="hint-fine">(hover to preview · click to load)</span><span class="hint-coarse">(tap to load)</span></span></div>
           <div class="examples-grid" id="examplesGrid" role="group" aria-label="Example images"></div>
         </div>
       </details>
@@ -264,20 +265,21 @@
       </div>
     </aside>
 
-    <section class="stage">
+    <section class="stage" id="stage-main" tabindex="-1">
       <div class="canvas-host">
         <div class="canvas-frame">
           <figure class="src-card" id="srcCard">
             <figcaption>Original</figcaption>
             <button id="srcUpload" type="button" class="src-upload" aria-label="Upload an image">+</button>
-            <canvas id="srcPreview" title="Click to replace the image" hidden></canvas>
+            <canvas id="srcPreview" title="Click to replace the image" aria-label="Original image — click to replace it" hidden></canvas>
           </figure>
           <div class="canvases">
             <div class="canvas-card">
               <h3 class="canvas-h">Editing: <span id="activeLabel">—</span></h3>
               <div class="editor-wrap">
                 <p id="editorEmpty" class="editor-empty"><strong>No image yet</strong>Open an image, or try an example from the Image panel.</p>
-                <canvas id="editor" tabindex="0" role="img" aria-label="Cut preview for the active layer — click a tie to select it; arrow keys nudge it, Delete removes it, Tab cycles ties."></canvas>
+                <canvas id="editor" tabindex="0" role="application" aria-label="Cut preview for the active layer — click a tie to select it; arrow keys nudge it, Delete removes it, Tab cycles ties."></canvas>
+                <div id="editorLive" class="vh" aria-live="polite"></div>
               </div>
             </div>
             <div class="canvas-card">

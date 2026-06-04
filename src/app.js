@@ -34,6 +34,7 @@ const els = {
   canvasFrame: document.querySelector('.canvas-frame'),
   srcPreview: $('srcPreview'), srcUpload: $('srcUpload'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'), themeToggle: $('themeToggle'),
+  stageMain: $('stage-main'), editorLive: $('editorLive'),
 };
 
 const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false, grayFlat: false };
@@ -47,12 +48,16 @@ const editor = new LayerEditor(els.editor, {
   onBridgesChanged,
   onBeforeChange: () => pushUndo(),
   onSample: (x, y) => { applySample(sampleImageColor(x, y)); },
+  onAnnounce: (msg) => { if (els.editorLive) els.editorLive.textContent = msg; },
 });
 
 // ---- status helpers -------------------------------------------------------
-function busy(msg) { els.status.textContent = msg; els.status.className = 'status busy'; }
-function ready(msg = 'Ready.') { els.status.textContent = msg; els.status.className = 'status'; }
-function fail(msg) { els.status.textContent = msg; els.status.className = 'status error'; }
+// aria-busy marks the stage as working (SR + AT); errors switch the live region to
+// assertive (role=alert) so failures interrupt, while progress/ready stay polite.
+function setBusyState(on) { if (els.stageMain) els.stageMain.setAttribute('aria-busy', on ? 'true' : 'false'); }
+function busy(msg) { els.status.textContent = msg; els.status.className = 'status busy'; els.status.setAttribute('role', 'status'); setBusyState(true); }
+function ready(msg = 'Ready.') { els.status.textContent = msg; els.status.className = 'status'; els.status.setAttribute('role', 'status'); setBusyState(false); }
+function fail(msg) { els.status.textContent = msg; els.status.className = 'status error'; els.status.setAttribute('role', 'alert'); setBusyState(false); }
 // Yield to let the status text paint. Uses setTimeout (not requestAnimationFrame)
 // so it still fires when the tab is backgrounded, instead of hanging the pipeline.
 const raf = () => new Promise(r => setTimeout(r, 0));
@@ -338,7 +343,7 @@ function updateCombined() {
   els.combined.innerHTML = svg.replace(/^<\?xml[^>]*\?>\s*/, '');
   // On screen, size by the viewBox (square) — the mm width/height are for export.
   const node = els.combined.querySelector('svg');
-  if (node) { node.removeAttribute('width'); node.removeAttribute('height'); node.style.width = '100%'; node.style.height = 'auto'; }
+  if (node) { node.removeAttribute('width'); node.removeAttribute('height'); node.style.width = '100%'; node.style.height = 'auto'; node.setAttribute('role', 'img'); node.setAttribute('aria-label', `Stacked stencil preview — ${state.layers.length} layer${state.layers.length === 1 ? '' : 's'}`); }
 }
 
 function updateDims() {
@@ -845,6 +850,7 @@ function buildExamples() {
   const cards = EXAMPLES.map(ex => {
     const card = document.createElement('button');
     card.type = 'button'; card.className = 'ex-card'; card.title = `Try the ${ex.label} example`;
+    card.setAttribute('aria-label', `${ex.label} example — load a sample image and turn it into a stencil`);
     const thumb = document.createElement('span'); thumb.className = 'ex-thumb';
     const before = ex.draw(180); before.className = 'ex-before'; before.setAttribute('aria-hidden', 'true');
     const after = document.createElement('span'); after.className = 'ex-after';
@@ -903,6 +909,17 @@ function init() {
   els.root.querySelectorAll('input[type=range][data-param]').forEach(addSteppers);
   // Clicking a section "?" shows its tooltip but must not collapse the section.
   els.root.querySelectorAll('.help').forEach(h => h.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); }));
+  // Expose the CSS-only tooltips (data-tip) + button titles to assistive tech via a
+  // visually-hidden description (screen readers can't read CSS ::after content).
+  let _descN = 0;
+  const describeFromTip = (el, text) => {
+    if (!el || !text) return;
+    const s = document.createElement('span'); s.className = 'vh'; s.id = 'd' + (++_descN); s.textContent = text;
+    el.insertAdjacentElement('afterend', s); el.setAttribute('aria-describedby', s.id);
+  };
+  els.root.querySelectorAll('.help').forEach(h => describeFromTip(h, h.getAttribute('data-tip')));
+  els.root.querySelectorAll('.icon-toggle').forEach(lbl => describeFromTip(lbl.querySelector('input'), lbl.getAttribute('data-tip')));
+  if (els.removeBgBtn) describeFromTip(els.removeBgBtn, els.removeBgBtn.getAttribute('title'));
   // Per-section reset (↺): reset that section's controls only; don't toggle the section.
   els.root.querySelectorAll('.sec-reset').forEach(b => b.addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();

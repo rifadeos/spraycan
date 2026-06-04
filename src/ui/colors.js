@@ -78,6 +78,7 @@ function renderGrid() {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'cp-chip'; b.style.background = c.hex;
     b.title = `${c.name} (${c.hex})`;
+    b.setAttribute('aria-label', `${c.name} ${c.hex}`);  // title alone isn't read by AT / shown on touch
     b.addEventListener('click', () => cb && cb(c.hex, c.name));
     ui.grid.appendChild(b);
   }

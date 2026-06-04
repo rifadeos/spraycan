@@ -9,14 +9,16 @@
 const MATERIAL = [233, 228, 218, 255]; // cardboard
 const INK      = [26, 26, 26, 255];    // sprayed / cut-away
 const ISLAND   = [230, 40, 41, 255];   // still-floating island (warning)
+const ISLAND_DK = [120, 12, 12, 255];  // 2nd stripe tone → hazard pattern (a non-colour cue for colour-blind users)
 
 export class LayerEditor {
-  constructor(canvas, { onBridgesChanged, onSample, onBeforeChange } = {}) {
+  constructor(canvas, { onBridgesChanged, onSample, onBeforeChange, onAnnounce } = {}) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.onBridgesChanged = onBridgesChanged || (() => {});
     this.onSample = onSample || (() => {});          // eyedropper: (x,y) -> sample colour
     this.onBeforeChange = onBeforeChange || (() => {}); // snapshot for undo
+    this.onAnnounce = onAnnounce || (() => {});      // screen-reader status (tie selected/deleted/nudged)
     this.bridges = [];
     this.mode = 'select';
     this.selected = -1;
@@ -50,7 +52,11 @@ export class LayerEditor {
     const id = new ImageData(width, height);
     const o = id.data;
     for (let i = 0, p = 0; i < data.length; i++, p += 4) {
-      const c = (floatingMask && floatingMask[i]) ? ISLAND : (data[i] === 1 ? INK : MATERIAL);
+      let c;
+      if (floatingMask && floatingMask[i]) {                 // diagonal hazard stripes, not just red
+        const x = i % width, y = (i / width) | 0;
+        c = (((x + y) >> 2) & 1) ? ISLAND : ISLAND_DK;
+      } else c = (data[i] === 1 ? INK : MATERIAL);
       o[p] = c[0]; o[p + 1] = c[1]; o[p + 2] = c[2]; o[p + 3] = c[3];
     }
     this.baseImage = id;
@@ -71,6 +77,16 @@ export class LayerEditor {
     this.bridges.splice(this.selected, 1);
     this.selected = -1;
     this.onBridgesChanged();
+    this.onAnnounce(`Tie deleted, ${this.bridges.length} remaining.`);
+  }
+
+  // Speak the current selection to assistive tech (the canvas itself is opaque to AT).
+  _announceSelected(verb = 'selected') {
+    const n = this.bridges.length;
+    const b = this.bridges[this.selected];
+    if (this.selected < 0 || !b) { this.onAnnounce(n ? `${n} tie${n === 1 ? '' : 's'} on this layer, none selected.` : 'No ties on this layer.'); return; }
+    const mm = this.mmPerPx > 0 ? `, ${(b.width * this.mmPerPx).toFixed(1)} mm wide` : '';
+    this.onAnnounce(`Tie ${this.selected + 1} of ${n} ${verb}${mm}.`);
   }
 
   render() {
@@ -221,6 +237,7 @@ export class LayerEditor {
         this.selected = this.selected < 0 ? (dir > 0 ? 0 : this.bridges.length - 1)
           : (this.selected + dir + this.bridges.length) % this.bridges.length;
         this.render();
+        this._announceSelected();
         return;
       }
       const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -233,6 +250,7 @@ export class LayerEditor {
         b.x1 = clamp(b.x1 + dx * step, 0, this.maskW); b.y1 = clamp(b.y1 + dy * step, 0, this.maskH);
         b.x2 = clamp(b.x2 + dx * step, 0, this.maskW); b.y2 = clamp(b.y2 + dy * step, 0, this.maskH);
         this.onBridgesChanged();
+        this._announceSelected('nudged');
         return;
       }
       if (e.key === 'a' || e.key === 'A') { this.setMode(this.mode === 'add' ? 'select' : 'add'); }
