@@ -27,7 +27,7 @@ const els = {
   layers: $('layers'), minFeature: $('minFeature'), bridgeWidth: $('bridgeWidth'),
   targetWidth: $('targetWidth'), unit: $('unit'),
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'), undoBtn: $('undoBtn'), redoBtn: $('redoBtn'),
-  exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
+  exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportPng: $('exportPng'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
   activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'), presetReason: $('presetReason'),
   stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
@@ -85,10 +85,18 @@ const MATERIALS = {
 function materialInfo() { return MATERIALS[state.params && state.params.material] || MATERIALS.mylar; }
 
 // ---- pipeline -------------------------------------------------------------
+// Cap working resolution on very low-memory devices to avoid out-of-memory crashes.
+// deviceMemory is undefined on many browsers (incl. iOS Safari) → we don't cap there.
+function safeMaxResolution(requested) {
+  const mem = navigator.deviceMemory;
+  if (mem && mem <= 2) return Math.min(requested, 1000);
+  return requested;
+}
+
 function reGray(opts = {}) {
   const p = state.params;
   const src = state.processedImg || state.img; // bg-removed or AI-simplified base, else the original
-  const maxResolution = opts.maxResolution || p.maxResolution;
+  const maxResolution = opts.maxResolution || safeMaxResolution(p.maxResolution);
   state.gray = imageToGray(src, {
     maxResolution, brightness: p.brightness * 1.2, contrast: p.contrast * 2,
     invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip,
@@ -293,7 +301,7 @@ function updateDims() {
   els.dims.textContent = `True size: ${Math.round(d.widthMm)} × ${Math.round(d.heightMm)} mm (≈ ${inW.toFixed(1)} × ${inH.toFixed(1)} in)  ·  working ${state.gray.width}×${state.gray.height}px`;
 }
 
-function setExportsEnabled(on) { [els.exportSvg, els.exportPdf, els.exportBtn].forEach(b => { if (b) b.disabled = !on; }); }
+function setExportsEnabled(on) { [els.exportSvg, els.exportPdf, els.exportPng, els.exportBtn].forEach(b => { if (b) b.disabled = !on; }); }
 
 // Draw the original uploaded image into the small "Original" preview (pyramid apex).
 function renderSource() {
@@ -707,6 +715,27 @@ async function exportPerLayer() {
   } catch (e) { console.error(e); fail('SVG export failed: ' + e.message); }
 }
 
+// Rasterise the stacked preview to a PNG — a shareable picture of the result
+// (the SVG/PDF are the cut/print deliverables).
+async function exportPngPreview() {
+  if (!state.layers.length || !state.layers[0].traced) return;
+  busy('Rendering preview image…'); await raf();
+  try {
+    const tw = state.layers[0].traced.width, th = state.layers[0].traced.height;
+    const svg = combinedSVG(state.layers.map(l => l.traced), dims(), { colors: state.colors });
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('could not render the preview')); img.src = url; });
+    const W = Math.min(1600, Math.max(800, tw)), H = Math.round(W * th / tw);
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#16171a'; ctx.fillRect(0, 0, W, H);   // dark backdrop so light layers stay visible
+    ctx.drawImage(img, 0, 0, W, H);
+    URL.revokeObjectURL(url);
+    await new Promise(r => c.toBlob(b => { if (b) { downloadBlob('spraycan-preview.png', b); ready('Preview image (PNG) exported.'); } else fail('Could not render the preview.'); r(); }, 'image/png'));
+  } catch (e) { console.error(e); fail('Preview export failed: ' + e.message); }
+}
+
 async function exportPDF() {
   if (!state.layers.length) return;
   busy('Building PDF (this can take a moment)…'); await raf();
@@ -818,6 +847,7 @@ function init() {
 
   els.exportSvg.addEventListener('click', exportPerLayer);
   els.exportPdf.addEventListener('click', exportPDF);
+  if (els.exportPng) els.exportPng.addEventListener('click', exportPngPreview);
 
   // Zoom
   els.zoomFit.addEventListener('click', () => setZoom(1));
@@ -829,6 +859,7 @@ function init() {
   document.addEventListener('click', e => { if (!els.exportMenu.contains(e.target)) toggleExportMenu(false); });
   els.exportSvg.addEventListener('click', () => toggleExportMenu(false));
   els.exportPdf.addEventListener('click', () => toggleExportMenu(false));
+  if (els.exportPng) els.exportPng.addEventListener('click', () => toggleExportMenu(false));
   // Keyboard nav inside the open Export menu.
   els.exportMenu.querySelector('.menu-pop').addEventListener('keydown', e => {
     const items = [...els.exportMenu.querySelectorAll('.menu-pop button')];
