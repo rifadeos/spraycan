@@ -114,10 +114,11 @@
   <main class="app" id="root">
     <aside class="panel">
       <details class="group">
-        <summary class="group-head">1 · Image <button type="button" class="help" aria-label="Image help" data-tip="Load with Open image (toolbar), or click an example below to try the tool instantly. The Preset tunes everything for you — Auto recognises the image with a small on-device AI model (downloaded once) and picks the best fit; switch it or tweak the sliders. Everything runs on your device — your image is never uploaded.">?</button></summary>
+        <summary class="group-head">1 · Image <button type="button" class="help" aria-label="Image help" data-tip="Load with Open image (toolbar), or click an example below to try the tool instantly. The Preset tunes everything for you — Auto picks a fit instantly from colour/tone (offline); Auto + AI recognition uses a small on-device model (downloaded once) for sharper portrait/landscape/subject detection. Switch it or tweak the sliders. Everything runs on your device — your image is never uploaded.">?</button></summary>
         <label class="row">Preset
           <select id="preset" data-param>
-            <option value="auto" selected>Auto (pick per image)</option>
+            <option value="auto" selected>Auto (instant)</option>
+            <option value="auto-ai">Auto + AI recognition</option>
             <option value="photo">Photo</option>
             <option value="portrait">Portrait</option>
             <option value="subject">Subject (isolate)</option>

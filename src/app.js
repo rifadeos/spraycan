@@ -639,14 +639,16 @@ function setPresetReason(text) { if (els.presetReason) els.presetReason.textCont
 async function pickPresetForImage(img) {
   const myGen = genToken;   // skip stale DOM writes if a newer image supersedes us mid-analysis
   const sel = els.preset ? els.preset.value : 'auto';
-  if (sel !== 'auto') { if (els.preset) els.preset.title = ''; setPresetReason(''); return sel; }
+  if (sel !== 'auto' && sel !== 'auto-ai') { if (els.preset) els.preset.title = ''; setPresetReason(''); return sel; }
   // Cheap colour/tone stats are always available (logo signal + offline fallback).
   const probe = imageToGray(img, { maxResolution: 360, autoLevels: false, smooth: 0 });
   const aspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height || 1);
   const stats = imageStats(probe, aspect);
   Object.assign(stats, colorStatsForImage(img, 360)); // skin / sky / foliage / saturation
-  // Prefer on-device ML recognition (generalises to any image); fall back to the heuristic.
-  try {
+  // Only "Auto + AI recognition" downloads/uses the on-device models; plain "Auto" stays
+  // instant + offline on the colour/tone heuristic below.
+  if (sel === 'auto-ai') {
+    try {
     const { classifyImage } = await import('./classify.js');
     busy('Analysing image with on-device AI (first run downloads ~20 MB, then cached)…');
     const ml = await classifyImage(img);
@@ -661,7 +663,8 @@ async function pickPresetForImage(img) {
       if (myGen === genToken) { if (els.preset) els.preset.title = 'AI: ' + label; setPresetReason('AI · ' + label); }
       return id;
     }
-  } catch (e) { console.warn('Auto (AI) recognition unavailable — using the colour heuristic:', e); }
+    } catch (e) { console.warn('Auto (AI) recognition unavailable — using the colour heuristic:', e); }
+  }
   const id = pickPreset(stats);
   if (myGen === genToken) { if (els.preset) els.preset.title = 'Auto: ' + (PRESETS[id]?.label || id); setPresetReason('Auto · ' + (PRESETS[id]?.label || id)); }
   return id;

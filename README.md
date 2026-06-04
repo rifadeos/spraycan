@@ -6,10 +6,12 @@ keep islands from falling out, then export clean **SVG** files (for a cutting ma
 **PDF proof** (one page per layer at true size, for a print/cut shop).
 
 No build step and no account. **Everything runs in your browser — your image is never uploaded.**
-"Auto" recognises the image with small **on-device** models (BlazeFace for faces + MobileNet for
-content, via TensorFlow.js) to pick the best preset, and **Remove background** uses an on-device
-model too. Those models download once from a CDN (then the browser caches them), so they need
-internet the first time — but the image itself never leaves your device.
+**Auto** picks a preset instantly from colour/tone (fully offline). **Auto + AI recognition** is an
+opt-in option that uses small **on-device** models (BlazeFace for faces + MobileNet for content, via
+TensorFlow.js) for sharper portrait/landscape/subject detection, and **Remove background** uses an
+on-device model too. Those models download once from a CDN (then the browser caches them), so they
+need internet the first time — but the image itself never leaves your device. A Content-Security-Policy
+restricts script/connect to just those model hosts, so the image can't be sent anywhere else.
 
 ## What it does
 
