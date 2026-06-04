@@ -23,7 +23,7 @@
   --panel-2: #23272d;  /* inputs */
   --line: #2e323a;     /* borders */
   --ink: #f2f0ec;      /* near-white text */
-  --muted: #a8aeb6;    /* secondary text */
+  --muted: #b4bac3;    /* secondary text (lightened to clear WCAG AA ≥4.5:1 on the dark panels) */
   --accent: #d9a528;   /* mustard yellow — reserved for active / selected / primary */
   --accent-2: #efc94e; /* light mustard (highlight) */
   --warn: #ff5a52;
@@ -61,6 +61,19 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 /* 3-column shell: left adjust · center canvas · right Layers+Properties dock */
 .app { flex: 1; display: grid; grid-template-columns: 300px minmax(0, 1fr) 300px; min-height: 0; }
 @media (max-width: 1180px) { .app { grid-template-columns: 280px minmax(0, 1fr) 264px; } }
+/* Phones / narrow: stack the three columns so nothing needs horizontal scrolling. */
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .panel { border-right: 0; border-bottom: 1px solid var(--line); max-height: 44vh; }
+  .dock { border-left: 0; border-top: 1px solid var(--line); }
+  .stage { min-height: 62vh; }
+}
+/* Bigger touch targets on touch devices. */
+@media (pointer: coarse) {
+  .icon-toggle, .icon-btn { width: 38px; height: 38px; }
+  .step { width: 28px; height: 28px; }
+  .zbtn { padding: 7px 11px; }
+}
 
 /* ---- control panel ---- */
 .panel {
@@ -86,6 +99,9 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 .group-head::before { content: "▾"; font-size: 10px; color: var(--muted); transition: transform .15s; }
 .group:not([open]) > .group-head::before { transform: rotate(-90deg); }
 .hint { margin: 6px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+/* Visible "what Auto picked & why" chip under the Preset select. */
+.preset-reason { display: block; margin: 5px 0 1px; font-size: 11px; color: var(--accent-2); line-height: 1.3; min-height: 13px; }
+.preset-reason:empty { display: none; }
 
 input[type=file] { width: 100%; font-size: 12px; margin-top: 6px; color: var(--muted); }
 /* Compact one-line control rows: label · control · value */

@@ -29,14 +29,15 @@ const els = {
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'),
   exportSvg: $('exportSvg'), exportPdf: $('exportPdf'), exportBtn: $('exportBtn'), exportMenu: $('exportMenu'),
   dims: $('dims'), status: $('status'), guide: $('guide'),
-  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'),
+  activeLabel: $('activeLabel'), editor: $('editor'), combined: $('combined'), colorPanel: $('colorPanel'), editorEmpty: $('editorEmpty'), removeBg: $('removeBg'), removeBgBtn: $('removeBgBtn'), reset: $('reset'), preset: $('preset'), presetReason: $('presetReason'),
   stage: document.querySelector('.stage'), canvasFrame: document.querySelector('.canvas-frame'),
   srcPreview: $('srcPreview'), srcCard: $('srcCard'), srcUpload: $('srcUpload'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'),
 };
 
-const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false };
+const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false, grayFlat: false };
 let busyToken = 0;
+let genToken = 0;        // bumped on every new image; lets async chains bail when a newer upload supersedes them
 let eyedropMode = false; // true while "Pick from image" is armed (sampling a colour)
 const undoStack = []; // per-layer bridge snapshots for Cmd/Ctrl-Z
 
@@ -57,8 +58,8 @@ const raf = () => new Promise(r => setTimeout(r, 0));
 // ---- derived values -------------------------------------------------------
 function mmPerPx() { return toMm(state.params.targetWidth, state.params.unit) / (state.gray ? state.gray.width : 1); }
 function bridgeWidthPx() { return Math.max(1, Math.round(state.params.bridgeWidth / mmPerPx())); }
-function dims() { return physicalSize(state.gray.width, state.gray.height, toMm(state.params.targetWidth, state.params.unit)); }
-function marks() { return state.params.layers > 1 ? cornerMarks(state.gray.width, state.gray.height) : []; }
+function dims() { if (!state.gray) return { widthMm: 0, heightMm: 0, mmPerPx: 1 }; return physicalSize(state.gray.width, state.gray.height, toMm(state.params.targetWidth, state.params.unit)); }
+function marks() { return (state.gray && state.params && state.params.layers > 1) ? cornerMarks(state.gray.width, state.gray.height) : []; }
 
 function defaultColors(n) {
   // Street-stencil greyscale: light grey -> near-black (white = the bare wall/paper).
@@ -92,6 +93,9 @@ function reGray(opts = {}) {
     invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip,
   });
   state.grayPreview = maxResolution < p.maxResolution; // true → this is a low-res drag preview, not final
+  let lo = 255, hi = 0; const gd = state.gray.data;
+  for (let i = 0; i < gd.length; i++) { const v = gd[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+  state.grayFlat = (hi - lo) < 4; // near-uniform image → posterising yields empty/flat layers; warn the user
   if (!p.thresholds || !p.thresholds.length) p.thresholds = autoThresholds(state.gray, p.layers);
   buildSampleData(src);
 }
@@ -203,8 +207,13 @@ async function recomputeAll() {
       state.colorNames = defaultColorNames(tonalN);
       if (p.edges) { state.colors.push('#161616'); state.colorNames.push('Edge lines'); }
     }
-    state.active = Math.min(state.active, state.layers.length - 1);
+    state.active = Math.max(0, Math.min(state.active, state.layers.length - 1));
     refreshUI();
+    if (state.grayFlat) {
+      els.status.textContent = 'Heads-up: this image is almost one flat tone — adjust Brightness/Contrast, or try a different image.';
+      els.status.className = 'status busy';
+      return;
+    }
     const minF = materialInfo().minFeatureMm;
     if (p.bridgeMode !== 'none' && p.bridgeWidth < minF) {
       els.status.textContent = `Heads-up: ${p.bridgeWidth} mm bridges are below this material's ~${minF} mm minimum — they may tear. Raise bridge width.`;
@@ -348,17 +357,18 @@ function onBridgesChanged() {
 // Background removal toggle — lazy-loads an in-browser model only when enabled.
 async function toggleBackground() {
   if (!state.img || !state.params) return;
+  const gen = genToken;
   if (!state.params.removeBg) { state.processedImg = null; reGray(); await recomputeAll(); return; }
   const my = ++busyToken;
   busy('Removing background… (first run downloads a model — please wait)');
   try {
     const { removeBackgroundToImage } = await import('./bg.js');
     const res = await removeBackgroundToImage(state.img, (key, current, total) => {
-      if (my !== busyToken) return;
+      if (my !== busyToken || gen !== genToken) return;
       const pct = total ? Math.round(100 * current / total) : null;
       busy(pct != null ? `Removing background… ${pct}% (first run downloads a model)` : 'Removing background…');
     });
-    if (my !== busyToken) return; // superseded by a newer action
+    if (my !== busyToken || gen !== genToken) return; // superseded by a newer action / image
     if (res.coverage < 0.05 || res.coverage > 0.95) {
       // No clear subject (≈0) or it kept everything (≈1) → don't isolate; use the full image.
       state.processedImg = null;
@@ -459,7 +469,7 @@ function resetToDefaults() {
   if (state.img) {
     reGray();
     renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-    recomputeAll();
+    recomputeAll().catch(err => fail('Error: ' + err.message));
   }
   ready('Settings reset to defaults.');
 }
@@ -485,7 +495,7 @@ function resetSection(grp) {
   } else {
     reGray();
   }
-  recomputeAll();
+  recomputeAll().catch(err => fail('Error: ' + err.message));
   ready('Section reset to defaults.');
 }
 
@@ -505,8 +515,10 @@ async function applyPreset(id) {
   state.params = mergeParams();
   state.params.thresholds = [];
   if (!state.img) return;
+  const gen = genToken;
   try {
     reGray();
+    if (gen !== genToken) return;   // a newer image arrived during setup
     renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
     if (state.params.removeBg) await toggleBackground();
     else await recomputeAll();
@@ -515,9 +527,11 @@ async function applyPreset(id) {
 
 // Resolve the preset to apply for the current image: an explicit choice, or
 // auto-pick from a quick neutral probe of the image when the select is on "Auto".
+function setPresetReason(text) { if (els.presetReason) els.presetReason.textContent = text || ''; }
+
 async function pickPresetForImage(img) {
   const sel = els.preset ? els.preset.value : 'auto';
-  if (sel !== 'auto') { if (els.preset) els.preset.title = ''; return sel; }
+  if (sel !== 'auto') { if (els.preset) els.preset.title = ''; setPresetReason(''); return sel; }
   // Cheap colour/tone stats are always available (logo signal + offline fallback).
   const probe = imageToGray(img, { maxResolution: 360, autoLevels: false, smooth: 0 });
   const aspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height || 1);
@@ -526,7 +540,7 @@ async function pickPresetForImage(img) {
   // Prefer on-device ML recognition (generalises to any image); fall back to the heuristic.
   try {
     const { classifyImage } = await import('./classify.js');
-    busy('Analysing image (first run downloads a small model)…');
+    busy('Analysing image with on-device AI (first run downloads ~20 MB, then cached)…');
     const ml = await classifyImage(img);
     if (ml) {
       const id = presetFromSignals({ ...stats, faces: ml.faces, faceArea: ml.faceArea, faceConf: ml.faceConf, scene: ml.scene, animal: ml.animal, hasObject: ml.hasObject });
@@ -535,12 +549,15 @@ async function pickPresetForImage(img) {
         : id === 'landscape' ? (ml.scene ? (ml.sceneName || 'scene') : ml.animal ? `${top1} in scene` : 'scene')
         : (id === 'subject' && top1) ? top1
         : '';
-      if (els.preset) els.preset.title = 'AI: ' + (PRESETS[id]?.label || id) + (why ? ` — ${why}` : '');
+      const label = (PRESETS[id]?.label || id) + (why ? ` — ${why}` : '');
+      if (els.preset) els.preset.title = 'AI: ' + label;
+      setPresetReason('AI · ' + label);
       return id;
     }
   } catch (e) { console.warn('Auto (AI) recognition unavailable — using the colour heuristic:', e); }
   const id = pickPreset(stats);
   if (els.preset) els.preset.title = 'Auto: ' + (PRESETS[id]?.label || id);
+  setPresetReason('Auto · ' + (PRESETS[id]?.label || id));
   return id;
 }
 
@@ -578,7 +595,7 @@ function runPreview(id) {
   try {
     reGray({ maxResolution: Math.min(PREVIEW_MAX, state.params.maxResolution) });
     if (id === 'layers') renderThresholds(els.thresholds, state.params.thresholds, onThreshold);
-    recomputeAll();
+    recomputeAll().catch(() => {});
   } catch { /* preview is best-effort */ }
 }
 
@@ -630,7 +647,7 @@ async function onChange(el) {
 function onThreshold(i, value) {
   if (!state.params) return;
   state.params.thresholds[i] = value;
-  recomputeAll();
+  recomputeAll().catch(err => fail('Error: ' + err.message));
 }
 
 // ---- export ---------------------------------------------------------------
@@ -678,14 +695,25 @@ async function exportPDF() {
 }
 
 // ---- image intake ---------------------------------------------------------
+// Release the previous image's heavy buffers so memory doesn't creep across uploads.
+function freeLayers() {
+  for (const L of state.layers) { L.baseMask = L.workMask = L.floatingMask = L.traced = null; }
+  state.layers = [];
+  state.sampleData = null;
+}
+
 async function useImage(img) {
+  const my = ++genToken;                     // new generation — supersedes any in-flight pipeline
+  freeLayers();
   state.img = img;
   state.processedImg = null;
   state.active = 0;                          // new image → start at the first layer
   state.colors = []; state.colorNames = [];  // …and fresh default colours (don't carry the last image's)
   // Start from a tuned preset (auto-picked per image, or the user's explicit choice)
   // so the upload looks near-finished instead of starting from a generic default.
-  await applyPreset(await pickPresetForImage(img));
+  const id = await pickPresetForImage(img);
+  if (my !== genToken) return;               // a newer image arrived while analysing — drop this one
+  await applyPreset(id);
 }
 
 // A built-in demo (concentric tones + enclosed islands) so the tool can be
