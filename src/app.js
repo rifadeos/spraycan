@@ -3,6 +3,7 @@
 import { fileToImage, imageToGray, fitSize } from './image.js';
 import { grayFromRGBA, isFlatGray } from './grayfilters.js';
 import { buildMasks } from './buildmasks.js';
+import { traceBuilt } from './tracelayers.js';
 import { recomputePlan } from './recomputePlan.js';
 import { autoThresholds } from './posterize.js';
 import { findIslands } from './islands.js';
@@ -147,10 +148,11 @@ function runOnWorker(payload) {
 }
 // Main-thread fallback: the identical pure functions, same result shape as the worker.
 function computeMainThread(payload) {
-  const { w, h, rgba, grayData, gopts, layersCount, thresholds, maskOpts } = payload;
+  const { w, h, rgba, grayData, gopts, layersCount, thresholds, maskOpts, traceOpts: tOpts, edgeOpts } = payload;
   const gray = grayData ? { width: w, height: h, data: grayData } : grayFromRGBA(rgba, w, h, gopts);
   const th = (thresholds && thresholds.length) ? thresholds : autoThresholds(gray, layersCount);
-  const { layers, edge } = buildMasks(gray, th, maskOpts);
+  const built = buildMasks(gray, th, maskOpts);
+  const { layers, edge } = traceBuilt(built.layers, built.edge, tOpts, edgeOpts);   // trace on the main thread (fallback)
   return { ok: true, grayFlat: isFlatGray(gray), thresholds: th, layers, edge, gray: grayData ? null : gray };
 }
 // Draw the working image (bg-removed base or original) at `maxResolution` and read
@@ -229,7 +231,7 @@ async function runPipeline({ regray = true, recomputeThresholds = false, maxReso
     const bw = Math.max(1, Math.round(p.bridgeWidth / mmpp));
     const gopts = { brightness: p.brightness * 1.2, contrast: p.contrast * 2, invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip };
     const maskOpts = { minFeature: p.minFeature, bridgeMode: p.bridgeMode, keepHighlights: p.keepHighlights, edges: p.edges, edgeAmount: p.edgeAmount, portrait: state.presetId === 'portrait', bridgeWidthPx: bw, mmPerPx: mmpp, tieSpacingMm: materialInfo().tieSpacing };
-    const payload = { id: ++_reqId, w, h, rgba, grayData, gopts, layersCount: p.layers, thresholds: recomputeThresholds ? [] : (p.thresholds || []), maskOpts };
+    const payload = { id: ++_reqId, w, h, rgba, grayData, gopts, layersCount: p.layers, thresholds: recomputeThresholds ? [] : (p.thresholds || []), maskOpts, traceOpts: traceOpts(), edgeOpts: { pathomit: 8 } };
 
     // --- heavy compute off-thread, with a main-thread fallback ---
     let res;
@@ -244,23 +246,24 @@ async function runPipeline({ regray = true, recomputeThresholds = false, maxReso
     p.thresholds = Array.from(res.thresholds);
     if (recomputeThresholds) renderThresholds(els.thresholds, p.thresholds, onThreshold);
 
-    // --- reburn + retrace each returned mask (ImageTracer + editor stay here) ---
-    // Build into a local array and commit atomically, so a superseded run (or a
-    // mid-build error) never leaves state.layers half-built.
+    // --- reburn each returned mask + adopt its worker-traced paths (editor stays here) ---
+    // The vector trace already ran off-thread; reburn only rebuilds the editor's
+    // workMask/floatingMask. Build into a local array + commit atomically, so a
+    // superseded run (or a mid-build error) never leaves state.layers half-built.
     const built = res.layers;
     const newLayers = [];
     for (let i = 0; i < built.length; i++) {
       if (my !== busyToken || myGen !== genToken) return;
-      const layer = { order: i, threshold: built[i].threshold, baseMask: asMask(built[i].baseMask), bridges: built[i].bridges || [], workMask: null, floatingMask: null, traced: null };
-      reburn(layer); retrace(layer);
+      const layer = { order: i, threshold: built[i].threshold, baseMask: asMask(built[i].baseMask), bridges: built[i].bridges || [], workMask: null, floatingMask: null, traced: built[i].traced || null };
+      reburn(layer); if (!layer.traced) retrace(layer);   // trace came from the worker/fallback; retrace only if missing
       newLayers.push(layer);
       busy(`Building layer ${i + 1} of ${built.length}…`); await raf();   // yield → UI stays responsive
     }
     const tonalN = newLayers.length;
     if (res.edge) {
       busy('Tracing outlines…'); await raf();
-      const layer = { order: newLayers.length, threshold: -1, isEdge: true, baseMask: asMask(res.edge.baseMask), bridges: [], workMask: null, floatingMask: null, traced: null };
-      reburn(layer); retrace(layer); newLayers.push(layer);
+      const layer = { order: newLayers.length, threshold: -1, isEdge: true, baseMask: asMask(res.edge.baseMask), bridges: [], workMask: null, floatingMask: null, traced: res.edge.traced || null };
+      reburn(layer); if (!layer.traced) retrace(layer); newLayers.push(layer);
     }
     if (my !== busyToken || myGen !== genToken) return;   // final supersession check before the atomic commit
     state.layers = newLayers;       // commit
