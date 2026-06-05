@@ -1,11 +1,8 @@
 // SprayCan — app controller. Owns state, runs the pipeline, wires the UI.
 
 import { fileToImage, imageToGray, fitSize } from './image.js';
-import { grayFromRGBA, isFlatGray } from './grayfilters.js';
-import { buildMasks } from './buildmasks.js';
-import { traceBuilt } from './tracelayers.js';
+import { getWorker, runOnWorker, computeMainThread, asMask, workerStatus } from './runner.js';
 import { recomputePlan } from './recomputePlan.js';
-import { autoThresholds } from './posterize.js';
 import { findIslands } from './islands.js';
 import { autoBridges, burnBridges } from './bridges.js';
 import { traceMaskToPaths } from './trace.js';
@@ -22,7 +19,7 @@ import { renderGuide } from './ui/guide.js';
 import { PRESETS, imageStats, pickPreset, analyzeColor, presetFromSignals } from './presets.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
-import { EXAMPLES } from './examples.js';
+import { initExamplesGallery } from './ui/examples-gallery.js';
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -101,60 +98,11 @@ function safeMaxResolution(requested) {
   return requested;
 }
 
-// ---- off-thread pipeline plumbing -----------------------------------------
-// The heavy, unchunked CPU work (tone-mapping via bilateral/CLAHE + posterise +
-// morphology + island bridging) runs in a module Web Worker so dragging stays
-// smooth. If a worker can't be created (old browser) or it errors, we run the very
-// same pure functions on the main thread — identical output, just on the UI thread.
-let _worker = null, _workerBroken = false, _reqId = 0;
-const _pending = new Map();
-function getWorker() {
-  if (_workerBroken) return null;
-  if (_worker) return _worker;
-  try {
-    _worker = new Worker(new URL('./pipeline.worker.js', import.meta.url), { type: 'module' });
-    _worker.onmessage = (e) => {
-      const r = _pending.get(e.data.id);
-      if (r) { _pending.delete(e.data.id); r.resolve(e.data); }
-    };
-    _worker.onerror = () => {                 // fall back permanently; reject anything in flight
-      noteWorkerFallback();
-      _workerBroken = true;
-      for (const [, r] of _pending) r.reject(new Error('pipeline worker error'));
-      _pending.clear();
-      try { _worker.terminate(); } catch {}
-      _worker = null;
-    };
-  } catch { noteWorkerFallback(); _workerBroken = true; _worker = null; }
-  return _worker;
-}
-// Tell the developer console once when we permanently drop to the main-thread
-// pipeline (e.g. a worker OOM on a low-memory device) — drags get less smooth.
-let _workerWarned = false;
-function noteWorkerFallback() {
-  if (_workerWarned) return;
-  _workerWarned = true;
-  console.warn('SprayCan: off-thread pipeline worker unavailable — running on the main thread (drags may be less smooth). Reload to retry.');
-}
-function runOnWorker(payload) {
-  const w = getWorker();
-  if (!w) return Promise.reject(new Error('no worker'));
-  return new Promise((resolve, reject) => {
-    _pending.set(payload.id, { resolve, reject });
-    // Inputs are cloned (not transferred) so the main thread keeps its copies
-    // (state.gray / sampleData stay valid). The worker transfers the results back.
-    try { w.postMessage(payload); } catch (e) { _pending.delete(payload.id); reject(e); }
-  });
-}
-// Main-thread fallback: the identical pure functions, same result shape as the worker.
-function computeMainThread(payload) {
-  const { w, h, rgba, grayData, gopts, layersCount, thresholds, maskOpts, traceOpts: tOpts, edgeOpts } = payload;
-  const gray = grayData ? { width: w, height: h, data: grayData } : grayFromRGBA(rgba, w, h, gopts);
-  const th = (thresholds && thresholds.length) ? thresholds : autoThresholds(gray, layersCount);
-  const built = buildMasks(gray, th, maskOpts);
-  const { layers, edge } = traceBuilt(built.layers, built.edge, tOpts, edgeOpts);   // trace on the main thread (fallback)
-  return { ok: true, grayFlat: isFlatGray(gray), thresholds: th, layers, edge, gray: grayData ? null : gray };
-}
+// ---- off-thread pipeline --------------------------------------------------
+// The Web Worker + its main-thread fallback (getWorker / runOnWorker /
+// computeMainThread / asMask / workerStatus) live in runner.js. The only piece
+// that must stay on the main thread is the canvas read below.
+
 // Draw the working image (bg-removed base or original) at `maxResolution` and read
 // back its RGBA — the one piece that must stay on the main thread (needs a canvas).
 // Reuses one scratch canvas across recomputes (getImageData returns an independent
@@ -171,8 +119,6 @@ function drawWorkingRGBA(maxResolution) {
   ctx.drawImage(src, 0, 0, w, h);
   return ctx.getImageData(0, 0, w, h);     // ImageData at working resolution (also the eyedropper source)
 }
-// Normalise a mask returned from the worker (typed-array view) or the fallback.
-function asMask(m) { return { width: m.width, height: m.height, data: m.data instanceof Uint8Array ? m.data : new Uint8Array(m.data) }; }
 function sampleImageColor(x, y) {
   const d = state.sampleData;
   if (!d) return null;
@@ -231,7 +177,7 @@ async function runPipeline({ regray = true, recomputeThresholds = false, maxReso
     const bw = Math.max(1, Math.round(p.bridgeWidth / mmpp));
     const gopts = { brightness: p.brightness * 1.2, contrast: p.contrast * 2, invert: p.invert, smooth: p.smooth, autoLevels: p.autoLevels, mirror: p.mirror, vflip: p.vflip };
     const maskOpts = { minFeature: p.minFeature, bridgeMode: p.bridgeMode, keepHighlights: p.keepHighlights, edges: p.edges, edgeAmount: p.edgeAmount, portrait: state.presetId === 'portrait', bridgeWidthPx: bw, mmPerPx: mmpp, tieSpacingMm: materialInfo().tieSpacing };
-    const payload = { id: ++_reqId, w, h, rgba, grayData, gopts, layersCount: p.layers, thresholds: recomputeThresholds ? [] : (p.thresholds || []), maskOpts, traceOpts: traceOpts(), edgeOpts: { pathomit: 8 } };
+    const payload = { w, h, rgba, grayData, gopts, layersCount: p.layers, thresholds: recomputeThresholds ? [] : (p.thresholds || []), maskOpts, traceOpts: traceOpts(), edgeOpts: { pathomit: 8 } };   // runOnWorker assigns .id
 
     // --- heavy compute off-thread, with a main-thread fallback ---
     let res;
@@ -834,61 +780,6 @@ async function useImage(img) {
   await applyPreset(id);
 }
 
-// Render a small stencil preview (the "after") for a gallery card, reusing the
-// pure pipeline functions at low resolution. Returns an SVG string, '' on failure.
-function stencilThumb(srcCanvas, maxRes = 200) {
-  try {
-    const { w, h } = fitSize(srcCanvas.width, srcCanvas.height, maxRes);
-    const c = document.createElement('canvas'); c.width = w; c.height = h;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(srcCanvas, 0, 0, w, h);
-    const gray = grayFromRGBA(ctx.getImageData(0, 0, w, h).data, w, h, { autoLevels: true });
-    const { layers } = buildMasks(gray, autoThresholds(gray, 4), { minFeature: 1, bridgeMode: 'auto', bridgeWidthPx: 2, mmPerPx: 1, tieSpacingMm: 65 });
-    const traced = layers.map(L => traceMaskToPaths(L.baseMask, { pathomit: 8, ltres: 1, qtres: 1 }));
-    return combinedSVG(traced, { widthMm: w, heightMm: h, mmPerPx: 1 }, { colors: defaultColors(layers.length) }).replace(/^<\?xml[^>]*\?>\s*/, '');
-  } catch { return ''; }
-}
-
-// Build the "try an example" gallery. Each card shows the original (before) and
-// crossfades to its stencil (after) on hover; clicking loads it on its preset.
-function buildExamples() {
-  if (!els.examplesGrid) return;
-  els.examplesGrid.innerHTML = '';
-  const cards = EXAMPLES.map(ex => {
-    const card = document.createElement('button');
-    card.type = 'button'; card.className = 'ex-card'; card.title = `Try the ${ex.label} example`;
-    card.setAttribute('aria-label', `${ex.label} example — load a sample image and turn it into a stencil`);
-    const thumb = document.createElement('span'); thumb.className = 'ex-thumb';
-    const before = ex.draw(180); before.className = 'ex-before'; before.setAttribute('aria-hidden', 'true');
-    const after = document.createElement('span'); after.className = 'ex-after';
-    thumb.append(before, after);
-    const name = document.createElement('span'); name.className = 'ex-name'; name.textContent = ex.label;
-    card.append(thumb, name);
-    card.addEventListener('click', () => {
-      if (els.preset) els.preset.value = ex.preset;          // land on the intended route instantly (no ML guess)
-      busy(`Loading ${ex.label} example…`);
-      useImage(ex.draw(600)).catch(err => fail('Example failed: ' + err.message));
-    });
-    els.examplesGrid.appendChild(card);
-    return { ex, after };
-  });
-  // Generate the stencil "after" previews lazily — only once the Image panel is open
-  // (skipped entirely for returning users who leave it closed), yielding between cards
-  // so these 4 mini-pipelines never block the first interaction.
-  let generated = false;
-  const genThumbs = async () => {
-    if (generated) return; generated = true;
-    for (const { ex, after } of cards) {
-      const svg = stencilThumb(ex.draw(360));
-      if (svg) { after.innerHTML = svg; const n = after.querySelector('svg'); if (n) { n.removeAttribute('width'); n.removeAttribute('height'); } }
-      await raf();   // yield between cards
-    }
-  };
-  const grp = els.examplesGrid.closest('details.group');
-  if (grp && !grp.open) grp.addEventListener('toggle', () => { if (grp.open) genThumbs(); });
-  else setTimeout(genThumbs, 60);   // panel already open (first visit) → after first paint
-}
-
 // Light/dark theme (persisted; respects the OS preference on first visit).
 function applyTheme(t) {
   if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
@@ -949,7 +840,7 @@ function init() {
     try { await useImage(await fileToImage(f)); }
     catch (err) { fail('Could not load image: ' + err.message); }
   });
-  buildExamples();
+  initExamplesGallery({ grid: els.examplesGrid, presetEl: els.preset, defaultColors, raf, busy, fail, loadImage: useImage });
   els.open.addEventListener('click', () => els.file.click());
   els.srcUpload.addEventListener('click', () => els.file.click());
   els.srcPreview.addEventListener('click', e => {
@@ -1031,7 +922,7 @@ if (/^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname)) {
   window.__sf = {
     get state() { return state; },
     get editor() { return editor; },
-    get worker() { return { created: !!_worker, broken: _workerBroken }; }, // pipeline-worker health (verification)
+    get worker() { return workerStatus(); }, // pipeline-worker health (verification)
     bridgeWidthPx,
     buildPDF: async () => { await ensurePdfLibs(); return buildPDF(state.layers, state.colors, dims(), { pageSize: state.params.pageSize, marks: marks(), colorLabels: state.layers.map((_, i) => colorLabel(i)), margin: state.params.margin }); },
   };
