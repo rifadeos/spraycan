@@ -24,18 +24,26 @@ export function getWorker() {
   if (_worker) return _worker;
   try {
     _worker = new Worker(new URL('./pipeline.worker.js', import.meta.url), { type: 'module' });
-    _worker.onmessage = (e) => {
-      const r = _pending.get(e.data.id);
-      if (r) { _pending.delete(e.data.id); r.resolve(e.data); }
-    };
-    _worker.onerror = () => {                 // fall back permanently; reject anything in flight
+    // Permanently drop to the main thread and reject anything in flight. Shared by both
+    // failure callbacks below so a dead worker can never leave a request unsettled.
+    const failWorker = (msg) => {
       noteWorkerFallback();
       _workerBroken = true;
-      for (const [, r] of _pending) r.reject(new Error('pipeline worker error'));
+      for (const [, r] of _pending) r.reject(new Error(msg));
       _pending.clear();
       try { _worker.terminate(); } catch {}
       _worker = null;
     };
+    _worker.onmessage = (e) => {
+      const r = _pending.get(e.data.id);
+      if (r) { _pending.delete(e.data.id); r.resolve(e.data); }
+    };
+    // onerror fires on an uncaught worker exception or a load/script failure;
+    // onmessageerror fires when the browser can't deserialize a message the worker sent.
+    // Neither covers the other — without onmessageerror that case would never resolve or
+    // reject its _pending entry, hanging runPipeline before it can reach the fallback.
+    _worker.onerror = () => failWorker('pipeline worker error');
+    _worker.onmessageerror = () => failWorker('pipeline worker message error');
   } catch { noteWorkerFallback(); _workerBroken = true; _worker = null; }
   return _worker;
 }

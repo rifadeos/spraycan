@@ -17,6 +17,7 @@ import { edgeMask } from '../src/edges.js';
 import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor, presetFromSignals } from '../src/presets.js';
 import { grayFromRGBA, isFlatGray } from '../src/grayfilters.js';
 import { buildMasks, buildBrightMask } from '../src/buildmasks.js';
+import { traceBuilt } from '../src/tracelayers.js';
 import { recomputePlan } from '../src/recomputePlan.js';
 import { layerToSVG, combinedSVG } from '../src/exporters/svg.js';
 
@@ -616,4 +617,60 @@ test('buildMasks is deterministic — worker and main-thread fallback agree', ()
     assert.deepEqual(Array.from(a.layers[i].baseMask.data), Array.from(b.layers[i].baseMask.data), `layer ${i} mask identical`);
     assert.equal(a.layers[i].bridges.length, b.layers[i].bridges.length);
   }
+});
+
+// --- traceBuilt orchestration (the trace step ce86f0b moved into the worker) ----
+// trace.js reaches for two browser globals (ImageTracer + ImageData) that node lacks.
+// Stub both so the trace runs in-process, and capture each ImageData handed to the
+// tracer (call order = layer order, then edge) so we can prove WHICH mask was traced.
+function withTracerStub(run) {
+  const calls = [];
+  const realTracer = global.ImageTracer, realImageData = global.ImageData;
+  global.ImageData = class { constructor(w, h) { this.width = w; this.height = h; this.data = new Uint8ClampedArray(w * h * 4); } };
+  global.ImageTracer = {
+    imagedataToTracedata(id) {
+      calls.push(Uint8ClampedArray.from(id.data));
+      return { palette: [{ r: 0, g: 0, b: 0, a: 255 }, { r: 255, g: 255, b: 255, a: 255 }], layers: [[], []] };
+    },
+  };
+  try { return { result: run(), calls }; } finally { global.ImageTracer = realTracer; global.ImageData = realImageData; }
+}
+
+test('traceBuilt: passthrough + traces the bridge-burned workMask, null edge stays null', () => {
+  const A = { threshold: 80, baseMask: art('####'), bridges: [{ x1: 2, y1: 0, x2: 2, y2: 0, width: 1 }] };
+  const B = { threshold: 160, baseMask: art('#..#') };          // no bridges key → defaults to []
+  const { result: out, calls } = withTracerStub(() => traceBuilt([A, B], null, { pathomit: 2 }, { pathomit: 8 }));
+
+  assert.equal(out.layers.length, 2, 'one output layer per input layer');
+  assert.equal(out.edge, null, 'null edge in → null edge out');
+
+  // baseMask + bridges + threshold thread straight through (same baseMask reference,
+  // NOT the workMask); a missing bridges array becomes [].
+  assert.equal(out.layers[0].threshold, 80);
+  assert.equal(out.layers[0].baseMask, A.baseMask);
+  assert.equal(out.layers[0].bridges, A.bridges);
+  assert.deepEqual(out.layers[1].bridges, []);
+  for (const L of out.layers) {
+    assert.ok(Array.isArray(L.traced.paths), 'traced has a paths array');
+    assert.equal(L.traced.width, 4);
+    assert.equal(L.traced.height, 1);
+  }
+
+  // The crux: layer 0 is traced from its workMask, where the bridge burned pixel 2 to
+  // MATERIAL — so the tracer saw white (255) there. Had it traced baseMask instead,
+  // pixel 2 would still be OPEN (byte 8 = 0). Pixel i=2 → R channel at byte i*4 = 8.
+  assert.equal(calls[0][8], 255, 'bridged layer traces the burned workMask, not baseMask');
+});
+
+test('traceBuilt: edge layer is traced from its baseMask when present', () => {
+  const A = { threshold: 100, baseMask: art('##') };
+  const edge = { baseMask: art('#.') };
+  const { result: out, calls } = withTracerStub(() => traceBuilt([A], edge, {}, { pathomit: 8 }));
+
+  assert.equal(out.layers.length, 1);
+  assert.ok(out.edge, 'edge in → traced edge out');
+  assert.equal(out.edge.baseMask, edge.baseMask, 'edge baseMask threads through');
+  assert.ok(Array.isArray(out.edge.traced.paths));
+  assert.equal(out.edge.traced.width, 2);
+  assert.equal(calls.length, 2, 'one trace per layer + one for the edge');
 });

@@ -1,8 +1,9 @@
 // Pure per-layer mask construction, shared by the main thread and the pipeline
 // Web Worker. Takes a greyscale buffer + thresholds and produces each layer's base
-// mask + auto-placed bridges (ties), plus an optional edge/line layer. No DOM and
-// no vectoriser — ImageTracer is a UMD global and stays on the main thread, which
-// also keeps the interactive bridge editor (reburn/retrace) on the main thread.
+// mask + auto-placed bridges (ties), plus an optional edge/line layer. No DOM here —
+// mask construction is vectoriser-free. The vector trace (ImageTracer) is a separate
+// step in tracelayers.js, run by the pipeline worker and the main-thread fallback alike;
+// interactive bridge edits still retrace a single layer on the main thread.
 //
 // This is the exact logic recomputeAll() used to run inline; extracting it lets the
 // worker and the main-thread fallback share one implementation, so they can never
