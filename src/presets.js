@@ -6,14 +6,17 @@
 // Values are control ids that exist in index.html (data-param). Look leans
 // cleaner/bolder: stronger smoothing + higher minFeature → fewer tiny pieces.
 
-// Auto-contrast (CLAHE) and Keep-highlights are OFF by default in every preset —
-// the user opts into them per image. Keeping highlight-protection off also stops
-// facial highlights from being preserved as little islands ("face holes").
+// Photographic presets (photo / portrait / landscape) turn auto-contrast (CLAHE) ON
+// so flat or shadowed photos still separate into clean tonal layers; the graphic
+// presets (logo / line-art / poster) leave tones raw. Keep-highlights stays OFF in
+// every preset — protecting facial highlights as islands creates "face holes".
+// Background removal is never forced on (it downloads a ~40 MB model); portrait /
+// subject only *suggest* it in the UI.
 export const PRESETS = {
-  photo:    { label: 'Photo',            params: { contrast: 10, smooth: 3, detail: 2, layers: 6, minFeature: 9,  autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
-  portrait: { label: 'Portrait',         params: { contrast: 12, smooth: 3, detail: 2, layers: 4, minFeature: 12, autoLevels: false, keepHighlights: false, edges: false, removeBg: true } },
-  subject:  { label: 'Subject (isolate)', params: { contrast: 14, smooth: 3, detail: 2, layers: 6, minFeature: 8,  autoLevels: false, keepHighlights: false, edges: false, removeBg: true } },
-  landscape:{ label: 'Landscape',        params: { contrast: 16, smooth: 2, detail: 2, layers: 6, minFeature: 8,  autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
+  photo:    { label: 'Photo',            params: { contrast: 10, smooth: 3, detail: 2, layers: 6, minFeature: 9,  autoLevels: true,  keepHighlights: false, edges: false, removeBg: false } },
+  portrait: { label: 'Portrait',         params: { contrast: 12, smooth: 3, detail: 2, layers: 4, minFeature: 12, autoLevels: true,  keepHighlights: false, edges: false, removeBg: false } },
+  subject:  { label: 'Subject (isolate)', params: { contrast: 14, smooth: 3, detail: 2, layers: 6, minFeature: 8,  autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
+  landscape:{ label: 'Landscape',        params: { contrast: 16, smooth: 2, detail: 2, layers: 6, minFeature: 8,  autoLevels: true,  keepHighlights: false, edges: false, removeBg: false } },
   poster:   { label: 'Bold poster',      params: { contrast: 35, smooth: 3, detail: 1, layers: 2, minFeature: 14, autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
   lineart:  { label: 'Line art',         params: { contrast: 12, smooth: 1, detail: 2, layers: 1, minFeature: 6,  autoLevels: false, keepHighlights: false, edges: true,  edgeAmount: 55, removeBg: false } },
   logo:     { label: 'Logo (B&W)',       params: { contrast: 45, smooth: 3, detail: 1, layers: 1, minFeature: 16, autoLevels: false, keepHighlights: false, edges: false, removeBg: false } },
@@ -132,4 +135,18 @@ export function presetFromSignals(sig = {}) {
   if ((sig.toneCount ?? 99) <= 6 && (sig.std ?? 0) > 55) return 'logo';
   if (sig.hasObject) return 'subject';                                // a recognised object → isolate it
   return pickPreset(sig);
+}
+
+// Image-adaptive look nudge. Pure: given the cheap probe stats and a preset's current
+// look values, return refined { brightness, contrast, smooth } clamped to the control
+// ranges. Conservative — it corrects exposure / flatness / noise, it doesn't overhaul.
+export function adaptiveTune(stats = {}, look = {}) {
+  const mean = stats.mean ?? 128, std = stats.std ?? 60, edge = stats.edgeDensity ?? 0;
+  let brightness = look.brightness ?? 0, contrast = look.contrast ?? 0, smooth = look.smooth ?? 1;
+  if (mean < 80) brightness += Math.round(Math.min(30, (80 - mean) * 0.5));        // lift dark / underexposed
+  else if (mean > 185) brightness -= Math.round(Math.min(25, (mean - 185) * 0.5)); // tame blown-out
+  if (std < 40) contrast += Math.round(Math.min(30, (40 - std) * 1.2));            // flat → separate the tones
+  if (edge > 0.16) smooth += 1;                                                     // noisy → trace less speckle
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  return { brightness: clamp(brightness, -100, 100), contrast: clamp(contrast, -100, 100), smooth: clamp(smooth, 0, 3) };
 }

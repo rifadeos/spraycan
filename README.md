@@ -34,7 +34,7 @@ python3 -m http.server 8000      # then open http://localhost:8000
 # or:  npx serve .
 ```
 
-Click any **example** in the Image panel (left) to see it work immediately, or **Open image** to load your own.
+**Open image** (toolbar) to load your own photo and watch SprayCan turn it into a layered, cuttable stencil.
 
 ## How to use
 
@@ -42,7 +42,7 @@ The **toolbar** (top) holds the actions and image tools: Open image, the transfo
 (invert, flip H/V, auto-contrast, keep-highlights, edge layer), and the two Export buttons. The
 **left panel** holds the adjustment sliders, grouped into numbered sections.
 
-1. **Image** — Open image (toolbar), or click an example in this section to try it instantly. Optionally toggle Remove background.
+1. **Image** — Open image (toolbar) to load a photo. Optionally toggle Remove background.
 2. **Adjust** — brightness / contrast / smooth / line-detail sliders; invert / flip / auto-contrast from the toolbar.
 3. **Layers** — pick 1–6. Each layer is one spray colour; tune the per-tone sliders.
 4. **Bridges** — every floating island is **auto-tied** with enough physics-aware ties (count + width

@@ -16,14 +16,13 @@ import { toHex } from './color.js';
 import { PALETTES, findPaintName, findNearestPaint } from './palettes.js';
 import { readParams, reflectValues, bindControls, renderThresholds, addSteppers } from './ui/controls.js';
 import { renderGuide } from './ui/guide.js';
-import { PRESETS, imageStats, pickPreset, analyzeColor, presetFromSignals } from './presets.js';
+import { PRESETS, imageStats, pickPreset, analyzeColor, presetFromSignals, adaptiveTune } from './presets.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
-import { initExamplesGallery } from './ui/examples-gallery.js';
 
 const $ = id => document.getElementById(id);
 const els = {
-  root: document.body, file: $('file'), open: $('open'), examplesGrid: $('examplesGrid'), thresholds: $('thresholds'),
+  root: document.body, file: $('file'), open: $('open'), thresholds: $('thresholds'),
   layers: $('layers'), minFeature: $('minFeature'), bridgeWidth: $('bridgeWidth'),
   targetWidth: $('targetWidth'), unit: $('unit'),
   autoBridge: $('autoBridge'), addBridge: $('addBridge'), delBridge: $('delBridge'), undoBtn: $('undoBtn'), redoBtn: $('redoBtn'),
@@ -36,16 +35,17 @@ const els = {
   stageMain: $('stage-main'), editorLive: $('editorLive'),
 };
 
-const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false, grayFlat: false };
+const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false, grayFlat: false, autoStats: null };
 let busyToken = 0;
 let genToken = 0;        // bumped on every new image; lets async chains bail when a newer upload supersedes them
 let eyedropMode = false; // true while "Pick from image" is armed (sampling a colour)
+let lookTouched = false; // user tuned the look since upload → the background AI re-pick must not override them
 const undoStack = []; // per-layer bridge snapshots for undo (Cmd/Ctrl-Z)
 const redoStack = []; // states undone, for redo (Cmd/Ctrl-Shift-Z)
 
 const editor = new LayerEditor(els.editor, {
   onBridgesChanged,
-  onBeforeChange: () => pushUndo(),
+  onBeforeChange: () => { lookTouched = true; pushUndo(); },
   onSample: (x, y) => { applySample(sampleImageColor(x, y)); },
   onAnnounce: (msg) => { if (els.editorLive) els.editorLive.textContent = msg; },
 });
@@ -503,6 +503,11 @@ function mergeParams() {
 // and for giving each newly-loaded image a clean look-baseline.
 const DEFAULTS = {};
 const LOOK_IDS = ['brightness', 'contrast', 'smooth', 'detail', 'invert', 'autoLevels', 'mirror', 'vflip', 'layers', 'minFeature', 'keepHighlights', 'edges', 'edgeAmount', 'removeBg'];
+// Controls whose change means "the user is shaping THIS result" → cancel the background
+// AI re-pick. Output/page prefs (size, margin, page) are deliberately excluded so that
+// sizing the stencil during the first (cold-cache) AI load doesn't lose the upgrade.
+const TOUCH_IDS = new Set([...LOOK_IDS, 'preset', 'bridgeWidth', 'bridgeMode', 'material']);
+function markTouched(id) { if (TOUCH_IDS.has(id)) lookTouched = true; }
 function captureDefaults() {
   els.root.querySelectorAll('[data-param]').forEach(el => { DEFAULTS[el.id] = (el.type === 'checkbox') ? el.checked : el.value; });
 }
@@ -532,7 +537,9 @@ function applyDefaults(ids) {
   syncRemoveBgBtn();
 }
 function resetToDefaults() {
+  lookTouched = true;            // an explicit reset is a deliberate choice — don't let the AI re-pick override it
   applyDefaults(Object.keys(DEFAULTS));
+  suggestRemoveBg(false);
   state.processedImg = null;
   state.params = mergeParams();
   state.params.thresholds = [];
@@ -543,6 +550,7 @@ function resetToDefaults() {
 // Reset just ONE section's controls to their defaults, then recompute. The
 // Layers section keeps the chosen layer COUNT (only the other controls reset).
 function resetSection(grp) {
+  lookTouched = true;            // explicit section reset is the user's choice — don't let the AI re-pick override it
   const layersEl = grp.querySelector('#layers');
   grp.querySelectorAll('[data-param]').forEach(el => {
     if (el.id === 'layers') return;              // keep the current number of layers/colours
@@ -559,6 +567,34 @@ function resetSection(grp) {
   ready('Section reset to defaults.');
 }
 
+// Image-adaptive look nudge — writes the tuned brightness/contrast/smooth back to the
+// controls (so they're visible + further-tweakable), driven by the pure adaptiveTune().
+function applyAdaptiveTune(stats) {
+  const num = (id, d) => Number(document.getElementById(id)?.value ?? d);
+  const t = adaptiveTune(stats, { brightness: num('brightness', 0), contrast: num('contrast', 0), smooth: num('smooth', 1) });
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = String(v); };
+  set('brightness', t.brightness); set('contrast', t.contrast); set('smooth', t.smooth);
+}
+
+// Flag (don't force) background removal on its button — it downloads a ~40 MB model,
+// so we suggest it visually for portrait/subject and let the user opt in.
+function suggestRemoveBg(on) {
+  if (!els.removeBgBtn) return;
+  const show = !!on && !els.removeBg.checked;
+  els.removeBgBtn.classList.toggle('suggest', show);
+  els.removeBgBtn.textContent = show ? 'Remove background (suggested)' : 'Remove background';
+}
+
+// One-line "why this preset" label from the AI signals (shared by Auto + AI and the
+// background refine).
+function aiReason(id, ml) {
+  const top1 = ((ml.top && ml.top[0] && ml.top[0].className) || '').split(',')[0];
+  const why = id === 'portrait' ? 'face detected'
+    : id === 'landscape' ? (ml.scene ? (ml.sceneName || 'scene') : ml.animal ? `${top1} in scene` : 'scene')
+    : (id === 'subject' && top1) ? top1 : '';
+  return (PRESETS[id]?.label || id) + (why ? ` — ${why}` : '');
+}
+
 // Apply a preset: reset the look to a clean baseline, then layer the preset's
 // control values on top, then recompute (background removal handles its own).
 async function applyPreset(id) {
@@ -570,10 +606,16 @@ async function applyPreset(id) {
     if (!el) return;
     if (el.type === 'checkbox') el.checked = !!val; else el.value = String(val);
   });
+  // Auto-picked presets get an image-adaptive nudge (exposure/contrast/noise) so the
+  // first result lands closer; an explicit user choice is left exactly as chosen.
+  if (state.autoStats) applyAdaptiveTune(state.autoStats);
   reflectValues(els.root);
   syncRemoveBgBtn();
   state.params = mergeParams();
   state.params.thresholds = [];   // cleared → runPipeline re-derives tones + redraws the sliders
+  // Subject-style looks benefit from cutting the background, but that downloads a
+  // ~40 MB model — so flag it as a suggestion on the button instead of auto-running.
+  suggestRemoveBg(!state.params.removeBg && (state.presetId === 'portrait' || state.presetId === 'subject'));
   if (!state.img) return;
   try {
     if (state.params.removeBg) await toggleBackground();
@@ -588,30 +630,31 @@ function setPresetReason(text) { if (els.presetReason) els.presetReason.textCont
 async function pickPresetForImage(img) {
   const myGen = genToken;   // skip stale DOM writes if a newer image supersedes us mid-analysis
   const sel = els.preset ? els.preset.value : 'auto';
-  if (sel !== 'auto' && sel !== 'auto-ai') { if (els.preset) els.preset.title = ''; setPresetReason(''); return sel; }
-  // Cheap colour/tone stats are always available (logo signal + offline fallback).
+  if (sel !== 'auto' && sel !== 'auto-ai') {
+    state.autoStats = null;                          // explicit choice → no image-adaptive nudge
+    if (els.preset) els.preset.title = ''; setPresetReason('');
+    return sel;
+  }
+  // Cheap colour/tone stats are always available (logo signal + offline fallback) and
+  // power both the instant pick and the adaptive look-nudge in applyPreset.
   const probe = imageToGray(img, { maxResolution: 360, autoLevels: false, smooth: 0 });
   const aspect = (img.naturalWidth || img.width) / (img.naturalHeight || img.height || 1);
   const stats = imageStats(probe, aspect);
   Object.assign(stats, colorStatsForImage(img, 360)); // skin / sky / foliage / saturation
-  // Only "Auto + AI recognition" downloads/uses the on-device models; plain "Auto" stays
-  // instant + offline on the colour/tone heuristic below.
+  state.autoStats = stats;
+  // "Auto + AI recognition" waits for the on-device models up front; plain "Auto"
+  // returns the instant colour/tone pick here and upgrades it in the background later.
   if (sel === 'auto-ai') {
     try {
-    const { classifyImage } = await import('./classify.js');
-    busy('Analysing image with on-device AI (first run downloads ~20 MB, then cached)…');
-    const ml = await classifyImage(img);
-    if (ml) {
-      const id = presetFromSignals({ ...stats, faces: ml.faces, faceArea: ml.faceArea, faceConf: ml.faceConf, scene: ml.scene, animal: ml.animal, hasObject: ml.hasObject });
-      const top1 = ((ml.top && ml.top[0] && ml.top[0].className) || '').split(',')[0];
-      const why = id === 'portrait' ? 'face detected'
-        : id === 'landscape' ? (ml.scene ? (ml.sceneName || 'scene') : ml.animal ? `${top1} in scene` : 'scene')
-        : (id === 'subject' && top1) ? top1
-        : '';
-      const label = (PRESETS[id]?.label || id) + (why ? ` — ${why}` : '');
-      if (myGen === genToken) { if (els.preset) els.preset.title = 'AI: ' + label; setPresetReason('AI · ' + label); }
-      return id;
-    }
+      const { classifyImage } = await import('./classify.js');
+      busy('Analysing image with on-device AI (first run downloads ~20 MB, then cached)…');
+      const ml = await classifyImage(img);
+      if (ml) {
+        const id = presetFromSignals({ ...stats, faces: ml.faces, faceArea: ml.faceArea, faceConf: ml.faceConf, scene: ml.scene, animal: ml.animal, hasObject: ml.hasObject });
+        const label = aiReason(id, ml);
+        if (myGen === genToken) { if (els.preset) els.preset.title = 'AI: ' + label; setPresetReason('AI · ' + label); }
+        return id;
+      }
     } catch (e) { console.warn('Auto (AI) recognition unavailable — using the colour heuristic:', e); }
   }
   const id = pickPreset(stats);
@@ -637,6 +680,7 @@ const PREVIEW_IDS = new Set(['brightness', 'contrast', 'smooth', 'layers', 'minF
 const PREVIEW_MAX = 700; // working resolution for the live drag preview
 
 function onInput(el) {
+  markTouched(el.id);            // user shaping the result cancels the background AI re-pick
   reflectValues(els.root);
   if (!state.img || !PREVIEW_IDS.has(el.id)) return;
   clearTimeout(previewTimer);
@@ -654,6 +698,7 @@ function runPreview(id) {
 }
 
 async function onChange(el) {
+  markTouched(el.id);                    // user shaping the result cancels the background AI re-pick
   clearTimeout(previewTimer);            // cancel a pending low-res preview
   reflectValues(els.root);
   state.params = mergeParams();
@@ -773,11 +818,35 @@ async function useImage(img) {
   state.processedImg = null;
   state.active = 0;                          // new image → start at the first layer
   state.colors = []; state.colorNames = [];  // …and fresh default colours (don't carry the last image's)
+  lookTouched = false;                       // fresh image → let the background AI refine the instant pick
   // Start from a tuned preset (auto-picked per image, or the user's explicit choice)
   // so the upload looks near-finished instead of starting from a generic default.
   const id = await pickPresetForImage(img);
   if (my !== genToken) return;               // a newer image arrived while analysing — drop this one
   await applyPreset(id);
+  if (my !== genToken) return;
+  // Plain "Auto" shows the instant heuristic result above, then quietly upgrades it with
+  // the on-device AI in the background (silent fallback if the models can't load).
+  if (els.preset && els.preset.value === 'auto') refineAutoWithAI(img, my);
+}
+
+// Plain "Auto" upgrades its instant pick with the on-device AI in the background.
+// Guards: a newer image (genToken), the user starting to tune (lookTouched), or a
+// switch to an explicit preset all cancel the swap. Falls back silently on failure.
+async function refineAutoWithAI(img, gen) {
+  let ml;
+  try {
+    const { classifyImage } = await import('./classify.js');
+    ml = await classifyImage(img);
+  } catch (e) { console.warn('Auto AI refine unavailable — keeping the instant result:', e); return; }
+  if (!ml || gen !== genToken || lookTouched) return;     // stale, or the user already started tuning
+  if (!els.preset || els.preset.value !== 'auto') return; // user switched to an explicit preset
+  const id = presetFromSignals({ ...(state.autoStats || {}), faces: ml.faces, faceArea: ml.faceArea, faceConf: ml.faceConf, scene: ml.scene, animal: ml.animal, hasObject: ml.hasObject });
+  const label = aiReason(id, ml);
+  if (els.preset) els.preset.title = 'AI: ' + label;
+  setPresetReason('AI · ' + label);
+  if (id === state.presetId) return;                      // AI agreed → just the upgraded reason, no recompute
+  await applyPreset(id);                                  // AI found a better look → re-apply (guards above keep it safe)
 }
 
 // Light/dark theme (persisted; respects the OS preference on first visit).
@@ -840,7 +909,6 @@ function init() {
     try { await useImage(await fileToImage(f)); }
     catch (err) { fail('Could not load image: ' + err.message); }
   });
-  initExamplesGallery({ grid: els.examplesGrid, presetEl: els.preset, defaultColors, raf, busy, fail, loadImage: useImage });
   els.open.addEventListener('click', () => els.file.click());
   els.srcUpload.addEventListener('click', () => els.file.click());
   els.srcPreview.addEventListener('click', e => {
@@ -851,6 +919,7 @@ function init() {
   els.removeBgBtn.addEventListener('click', () => {
     els.removeBg.checked = !els.removeBg.checked;
     syncRemoveBgBtn();
+    suggestRemoveBg(false);    // the user engaged the control → clear the "suggested" cue
     els.removeBg.dispatchEvent(new Event('change', { bubbles: true }));
   });
   syncRemoveBgBtn();

@@ -14,7 +14,7 @@ import { PALETTES, findPaintName, findNearestPaint } from '../src/palettes.js';
 import { PAGE_OPTIONS, sheetPageSize } from '../src/exporters/pdf.js';
 import { clahe, bilateralFilter, flipHorizontal, flipVertical } from '../src/filters.js';
 import { edgeMask } from '../src/edges.js';
-import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor, presetFromSignals } from '../src/presets.js';
+import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor, presetFromSignals, adaptiveTune } from '../src/presets.js';
 import { grayFromRGBA, isFlatGray } from '../src/grayfilters.js';
 import { buildMasks, buildBrightMask } from '../src/buildmasks.js';
 import { traceBuilt } from '../src/tracelayers.js';
@@ -273,8 +273,8 @@ test('skinFraction detects skin tones and ignores non-skin', () => {
   assert.equal(skinFraction(blue, W, H), 0, 'a blue image has no skin');
 });
 
-test('portrait preset isolates the subject and uses few layers (fights face holes)', () => {
-  assert.equal(PRESETS.portrait.params.removeBg, true);
+test('portrait uses few layers + merges small islands; background removal is suggested, not forced', () => {
+  assert.equal(PRESETS.portrait.params.removeBg, false); // Phase 2: suggested in the UI, not an automatic ~40 MB download
   assert.ok(PRESETS.portrait.params.layers <= 4, 'portrait uses few layers');
   assert.ok(PRESETS.portrait.params.minFeature >= 10, 'portrait merges small facial islands');
 });
@@ -323,6 +323,25 @@ test('every preset only references real control ids', () => {
     assert.ok(p.label, `${id} needs a label`);
     for (const k of Object.keys(p.params)) assert.ok(VALID.has(k), `${id} references unknown control "${k}"`);
   }
+});
+
+test('photographic presets enable auto-contrast; graphic presets keep raw tones', () => {
+  for (const id of ['photo', 'portrait', 'landscape']) assert.equal(PRESETS[id].params.autoLevels, true, `${id} auto-contrasts`);
+  for (const id of ['logo', 'lineart']) assert.equal(PRESETS[id].params.autoLevels, false, `${id} keeps raw tones`);
+});
+
+test('adaptiveTune corrects exposure, flatness and noise, and clamps to control ranges', () => {
+  const dark = adaptiveTune({ mean: 50, std: 25, edgeDensity: 0.05 }, { brightness: 0, contrast: 12, smooth: 3 });
+  assert.ok(dark.brightness > 0, 'dark image gets a brightness lift');
+  assert.ok(dark.contrast > 12, 'flat image gets more contrast');
+  const bright = adaptiveTune({ mean: 215, std: 60, edgeDensity: 0.05 }, { brightness: 0, contrast: 10, smooth: 3 });
+  assert.ok(bright.brightness < 0, 'over-exposed image is pulled down');
+  const noisy = adaptiveTune({ mean: 128, std: 60, edgeDensity: 0.25 }, { brightness: 0, contrast: 10, smooth: 1 });
+  assert.equal(noisy.smooth, 2, 'noisy image smooths one step more');
+  const clean = adaptiveTune({ mean: 130, std: 60, edgeDensity: 0.05 }, { brightness: 0, contrast: 10, smooth: 3 });
+  assert.deepEqual(clean, { brightness: 0, contrast: 10, smooth: 3 }, 'a well-exposed, contrasty, clean image is left alone');
+  const extreme = adaptiveTune({ mean: 0, std: 0, edgeDensity: 0.9 }, { brightness: 95, contrast: 95, smooth: 3 });
+  assert.ok(extreme.brightness <= 100 && extreme.contrast <= 100 && extreme.smooth <= 3, 'clamped to the maxima');
 });
 
 test('imageStats summarises a two-tone image', () => {

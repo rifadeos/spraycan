@@ -107,12 +107,8 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
    give active/selected states a border that survives. */
 @media (forced-colors: active) {
   .icon-toggle:has(input:checked), .icon-btn.active, button.active, .toggle-btn.active,
-  .guide-item.active, .ex-card:focus-visible { outline: 2px solid Highlight; outline-offset: 1px; }
+  .guide-item.active { outline: 2px solid Highlight; outline-offset: 1px; }
 }
-/* Pointer-aware example-gallery hint (touch has no hover; the result still shows
-   in the main Stacked-preview after a tap). */
-.hint-coarse { display: none; }
-@media (hover: none) { .hint-fine { display: none; } .hint-coarse { display: inline; } }
 /* Skip link — first focusable element, visible only on focus. */
 .skip-link { position: absolute; left: 8px; top: -44px; z-index: 60; background: var(--panel-3); color: var(--ink); border: 1px solid var(--accent); border-radius: var(--r); padding: 7px 11px; font-size: 12px; transition: top .15s ease; }
 .skip-link:focus { top: 8px; outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -264,22 +260,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .toggle-btn { width: 100%; margin-top: 4px; }
 .toggle-btn.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); }
 .toggle-btn.active::before { content: "✓ "; }
+.toggle-btn.suggest { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 
-/* "Try an example" gallery — before→after cards (hover crossfades to the stencil) */
-.examples { margin-top: 9px; }
-.examples-label { font-size: 11px; font-weight: 600; color: var(--muted); margin: 0 1px 6px; }
-.examples-hint { font-weight: 400; opacity: .8; }
-.examples-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.ex-card { display: flex; flex-direction: column; gap: 4px; padding: 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); cursor: pointer; }
-.ex-card:hover { border-color: var(--accent); background: var(--hover); }
-.ex-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ex-thumb { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: calc(var(--r) - 2px); overflow: hidden; background: #16171a; }
-.ex-thumb > .ex-before, .ex-thumb > .ex-after { position: absolute; inset: 0; width: 100%; height: 100%; }
-.ex-before { object-fit: cover; display: block; }
-.ex-after { display: grid; place-items: center; background: #efe9df; opacity: 0; transition: opacity .22s ease; } /* paper/wall: dark spray reads on light, like a real stencil */
-.ex-after svg { width: 100%; height: 100%; display: block; }
-.ex-card:hover .ex-after, .ex-card:focus-visible .ex-after { opacity: 1; }
-.ex-name { font-size: 11px; font-weight: 600; color: var(--ink); text-align: center; }
 .ai-field { width: 100%; margin-top: 6px; }
 
 /* Bottom status + zoom bar (like a pro app's footer) */
