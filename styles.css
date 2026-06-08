@@ -79,7 +79,6 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 .tool-actions { margin-left: auto; }
 .tool-sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
 .tbtn { flex: 0 0 auto; padding: 6px 11px; }
-.toolbar .icon-toolbar { margin: 0; }
 
 /* 3-column shell: left adjust · center canvas · right Layers+Properties dock */
 .app { flex: 1; display: grid; grid-template-columns: 300px minmax(0, 1fr) 300px; min-height: 0; }
@@ -93,7 +92,7 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 }
 /* Bigger touch targets on touch devices. */
 @media (pointer: coarse) {
-  .icon-toggle, .icon-btn { width: 38px; height: 38px; }
+  .icon-btn { width: 38px; height: 38px; }
   .step { width: 28px; height: 28px; }
   .zbtn { padding: 7px 11px; }
 }
@@ -106,7 +105,7 @@ body { background: var(--bg); color: var(--ink); display: flex; flex-direction: 
 /* Windows High Contrast / forced-colors: the accent fill is flattened there, so
    give active/selected states a border that survives. */
 @media (forced-colors: active) {
-  .icon-toggle:has(input:checked), .icon-btn.active, button.active, .toggle-btn.active,
+  .icon-btn.active, button.active, .toggle-btn.active,
   .guide-item.active { outline: 2px solid Highlight; outline-offset: 1px; }
 }
 /* Skip link — first focusable element, visible only on focus. */
@@ -149,21 +148,26 @@ input[type=file] { width: 100%; font-size: 12px; margin-top: 6px; color: var(--m
 .out { order: 3; color: var(--ink); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
 input.out { width: 48px; padding: 4px 6px; text-align: right; }
 input.out::-webkit-inner-spin-button, input.out::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-.check { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 10px 0; color: var(--muted); }
+/* Labeled checkbox rows (Invert, Auto-contrast, flips, Keep highlights, Edge layer) */
+.check { display: flex; align-items: center; gap: 8px; font-size: 12px; margin: 9px 0; color: var(--muted); cursor: pointer; }
+.check:hover { color: var(--ink); }
+.check input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; margin: 0; flex: 0 0 auto; cursor: pointer; }
+.check .icn { width: 16px; height: 16px; flex: 0 0 auto; color: var(--muted); transition: color .12s; }
+.check:hover .icn { color: var(--ink); }
+.check:has(input:checked) { color: var(--ink); }
+.check:has(input:checked) .icn { color: var(--accent-2); }
+.check:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 5px; }
+.check-note { color: var(--muted); font-size: 11px; margin-left: auto; opacity: .85; }
 
-/* Image-transform icon toggles (Adobe-style; hover shows the native tooltip) */
-.icon-toolbar { display: flex; gap: 8px; margin: 12px 0 8px; flex-wrap: wrap; }
-.icon-toggle {
-  position: relative; display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border: 1px solid var(--line); border-radius: var(--r);
-  background: var(--panel-2); color: var(--muted); cursor: pointer;
-  transition: border-color .12s, background .12s, color .12s;
+/* Drag-and-drop an image anywhere onto the canvas (handlers in app.js). */
+.stage { position: relative; }
+body.drag-over .stage::after {
+  content: "Drop image to open"; position: absolute; inset: 8px; z-index: 30;
+  display: grid; place-items: center; text-align: center;
+  background: var(--accent-soft); border: 2px dashed var(--accent); border-radius: var(--r);
+  color: var(--accent-2); font-weight: 600; font-size: 15px; letter-spacing: .2px; pointer-events: none;
 }
-.icon-toggle:hover { background: var(--hover-2); color: var(--ink); }
-.icon-toggle .icn { width: 18px; height: 18px; display: block; }
-.icon-toggle input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
-.icon-toggle:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); }
-.icon-toggle:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Icon action buttons (auto-bridge / add tie / delete tie) */
@@ -174,8 +178,8 @@ input.out::-webkit-inner-spin-button, input.out::-webkit-outer-spin-button { -we
 .icon-btn .icn { width: 18px; height: 18px; display: block; }
 .icon-row { gap: 8px; }
 
-/* Instant custom tooltip for toolbar icon toggles + icon action buttons */
-.icon-toggle[data-tip]::after, .icon-btn[data-tip]::after {
+/* Instant custom tooltip for the icon action buttons (auto-bridge / ties / undo / redo) */
+.icon-btn[data-tip]::after {
   content: attr(data-tip);
   position: absolute; top: calc(100% + 7px); left: 50%;
   transform: translateX(-50%) translateY(-3px);
@@ -185,8 +189,6 @@ input.out::-webkit-inner-spin-button, input.out::-webkit-outer-spin-button { -we
   padding: 5px 8px; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.45);
   opacity: 0; pointer-events: none; transition: opacity .12s, transform .12s; z-index: 60;
 }
-.icon-toggle[data-tip]:hover::after,
-.icon-toggle[data-tip]:focus-within::after,
 .icon-btn[data-tip]:hover::after,
 .icon-btn[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
 

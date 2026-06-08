@@ -830,6 +830,16 @@ async function useImage(img) {
   if (els.preset && els.preset.value === 'auto') refineAutoWithAI(img, my);
 }
 
+// Load a File (from the picker or a drag-drop) → decode → run the pipeline. Shared so
+// both entry points behave identically.
+async function loadFile(f) {
+  if (!f) return;
+  if (f.type && !f.type.startsWith('image/')) { fail('That isn’t an image file — drop a PNG, JPG, WEBP or GIF.'); return; }
+  busy('Loading image…');
+  try { await useImage(await fileToImage(f)); }
+  catch (err) { fail('Could not load image: ' + err.message); }
+}
+
 // Plain "Auto" upgrades its instant pick with the on-device AI in the background.
 // Guards: a newer image (genToken), the user starting to tune (lookTouched), or a
 // switch to an explicit preset all cancel the swap. Falls back silently on failure.
@@ -891,7 +901,6 @@ function init() {
     el.insertAdjacentElement('afterend', s); el.setAttribute('aria-describedby', s.id);
   };
   els.root.querySelectorAll('.help').forEach(h => describeFromTip(h, h.getAttribute('data-tip')));
-  els.root.querySelectorAll('.icon-toggle').forEach(lbl => describeFromTip(lbl.querySelector('input'), lbl.getAttribute('data-tip')));
   if (els.removeBgBtn) describeFromTip(els.removeBgBtn, els.removeBgBtn.getAttribute('title'));
   // Per-section reset (↺): reset that section's controls only; don't toggle the section.
   els.root.querySelectorAll('.sec-reset').forEach(b => b.addEventListener('click', e => {
@@ -902,18 +911,35 @@ function init() {
   // Sections are independent: start closed, open as many as you like.
   buildColorPanel(els.colorPanel, { palettes: PALETTES, onPick: (hex, name) => setColor(state.active, hex, name), onPickFromImage: startEyedrop });
 
-  els.file.addEventListener('change', async e => {
-    const f = e.target.files[0];
-    if (!f) return;
-    busy('Loading image…');
-    try { await useImage(await fileToImage(f)); }
-    catch (err) { fail('Could not load image: ' + err.message); }
-  });
+  els.file.addEventListener('change', e => loadFile(e.target.files[0]));
   els.open.addEventListener('click', () => els.file.click());
   els.srcUpload.addEventListener('click', () => els.file.click());
   els.srcPreview.addEventListener('click', e => {
     if (eyedropMode) { sampleFromSrcPreview(e); return; }  // eyedropper armed → sample the photo
     els.file.click();                                       // otherwise → click the preview to replace
+  });
+
+  // Drag-and-drop an image file anywhere onto the page. A depth counter keeps nested
+  // dragenter/leave from flickering the highlight; body.drag-over drives the
+  // "Drop image to open" overlay on the canvas (styles.css).
+  const hasFiles = e => e.dataTransfer && Array.prototype.includes.call(e.dataTransfer.types || [], 'Files');
+  let dragDepth = 0;
+  window.addEventListener('dragenter', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (++dragDepth === 1) document.body.classList.add('drag-over');
+  });
+  window.addEventListener('dragover', e => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  window.addEventListener('dragleave', e => {
+    if (!hasFiles(e)) return;
+    if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('drag-over'); }
+  });
+  window.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0; document.body.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    loadFile(Array.prototype.find.call(files, f => f.type.startsWith('image/')) || files[0]);
   });
   els.reset.addEventListener('click', resetToDefaults);
   els.removeBgBtn.addEventListener('click', () => {
