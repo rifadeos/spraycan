@@ -19,6 +19,7 @@ import { renderGuide } from './ui/guide.js';
 import { PRESETS, imageStats, pickPreset, analyzeColor, presetFromSignals, adaptiveTune } from './presets.js';
 import { buildColorPanel, setColorPanelValue } from './ui/colors.js';
 import { LayerEditor } from './ui/editor.js';
+import { initLooks } from './ui/looks.js';
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -32,7 +33,7 @@ const els = {
   canvasFrame: document.querySelector('.canvas-frame'),
   srcPreview: $('srcPreview'), srcUpload: $('srcUpload'),
   zoomFit: $('zoomFit'), zoomOut: $('zoomOut'), zoomIn: $('zoomIn'), zoomLabel: $('zoomLabel'), themeToggle: $('themeToggle'),
-  stageMain: $('stage-main'), editorLive: $('editorLive'),
+  stageMain: $('stage-main'), editorLive: $('editorLive'), looks: $('looks'),
 };
 
 const state = { img: null, gray: null, params: null, layers: [], colors: [], colorNames: [], active: 0, sampleData: null, processedImg: null, presetId: 'photo', grayPreview: false, grayFlat: false, autoStats: null };
@@ -40,6 +41,7 @@ let busyToken = 0;
 let genToken = 0;        // bumped on every new image; lets async chains bail when a newer upload supersedes them
 let eyedropMode = false; // true while "Pick from image" is armed (sampling a colour)
 let lookTouched = false; // user tuned the look since upload → the background AI re-pick must not override them
+let looksStrip = null;   // the "Pick a look" preview strip (built in init)
 const undoStack = []; // per-layer bridge snapshots for undo (Cmd/Ctrl-Z)
 const redoStack = []; // states undone, for redo (Cmd/Ctrl-Shift-Z)
 
@@ -616,6 +618,7 @@ async function applyPreset(id) {
   // Subject-style looks benefit from cutting the background, but that downloads a
   // ~40 MB model — so flag it as a suggestion on the button instead of auto-running.
   suggestRemoveBg(!state.params.removeBg && (state.presetId === 'portrait' || state.presetId === 'subject'));
+  if (looksStrip) looksStrip.setActive(state.presetId);   // highlight the matching "Pick a look" thumbnail
   if (!state.img) return;
   try {
     if (state.params.removeBg) await toggleBackground();
@@ -825,6 +828,8 @@ async function useImage(img) {
   if (my !== genToken) return;               // a newer image arrived while analysing — drop this one
   await applyPreset(id);
   if (my !== genToken) return;
+  // Show the per-image "Pick a look" previews (painted one-per-frame, off the hot path).
+  if (looksStrip) { looksStrip.show(true); looksStrip.render(img); }
   // Plain "Auto" shows the instant heuristic result above, then quietly upgrades it with
   // the on-device AI in the background (silent fallback if the models can't load).
   if (els.preset && els.preset.value === 'auto') refineAutoWithAI(img, my);
@@ -910,6 +915,20 @@ function init() {
   }));
   // Sections are independent: start closed, open as many as you like.
   buildColorPanel(els.colorPanel, { palettes: PALETTES, onPick: (hex, name) => setColor(state.active, hex, name), onPickFromImage: startEyedrop });
+
+  // "Pick a look" strip: one preview thumbnail per preset; clicking one is the same as
+  // choosing it from the Preset dropdown (so the existing change handler does the work).
+  if (els.looks) {
+    const lookPresets = Object.entries(PRESETS).map(([id, p]) => ({ id, label: p.label, params: p.params }));
+    looksStrip = initLooks(els.looks, {
+      presets: lookPresets,
+      onPick: (id) => {
+        if (!els.preset) return;
+        els.preset.value = id;
+        els.preset.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+    });
+  }
 
   els.file.addEventListener('change', e => loadFile(e.target.files[0]));
   els.open.addEventListener('click', () => els.file.click());

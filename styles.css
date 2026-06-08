@@ -168,6 +168,17 @@ body.drag-over .stage::after {
   color: var(--accent-2); font-weight: 600; font-size: 15px; letter-spacing: .2px; pointer-events: none;
 }
 
+/* "Pick a look" strip above the canvas — one preset-preview thumbnail per look */
+.looks { display: flex; align-items: center; gap: 8px; padding: 8px 10px; overflow-x: auto; border-bottom: 1px solid var(--line); background: var(--panel); scrollbar-width: thin; }
+.looks[hidden] { display: none; }
+.looks-label { font-size: 11px; font-weight: 600; color: var(--muted); flex: 0 0 auto; margin-right: 2px; white-space: nowrap; }
+.look { display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; width: 82px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel-2); color: var(--muted); cursor: pointer; transition: border-color .12s, background .12s, color .12s; }
+.look:hover { border-color: var(--accent); color: var(--ink); }
+.look:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.look-thumb { width: 100%; height: 48px; border-radius: 4px; background: var(--panel-3); display: block; object-fit: cover; }
+.look-label { font-size: 10.5px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.look.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); }
+
 .vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* Icon action buttons (auto-bridge / add tie / delete tie) */
