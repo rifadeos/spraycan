@@ -18,7 +18,7 @@ import { PRESETS, imageStats, pickPreset, skinFraction, analyzeColor, presetFrom
 import { grayFromRGBA, isFlatGray } from '../src/grayfilters.js';
 import { buildMasks, buildBrightMask } from '../src/buildmasks.js';
 import { traceBuilt } from '../src/tracelayers.js';
-import { recomputePlan } from '../src/recomputePlan.js';
+import { recomputePlan } from '../src/recomputeplan.js';
 import { layerToSVG, combinedSVG } from '../src/exporters/svg.js';
 
 // --- helpers ---------------------------------------------------------------
