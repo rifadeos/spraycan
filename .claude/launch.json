@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "SprayCan static server (python)",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8770", "--bind", "127.0.0.1"],
+      "port": 8770
+    },
+    {
+      "name": "SprayCan static server (npx serve)",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", ".", "-l", "8000"],
+      "port": 8000
+    }
+  ]
+}
