@@ -2,7 +2,7 @@
 
 import { fileToImage, imageToGray, fitSize } from './image.js';
 import { getWorker, runOnWorker, computeMainThread, asMask, workerStatus } from './runner.js';
-import { recomputePlan } from './recomputePlan.js';
+import { recomputePlan } from './recomputeplan.js';
 import { findIslands } from './islands.js';
 import { autoBridges, burnBridges } from './bridges.js';
 import { traceMaskToPaths } from './trace.js';
